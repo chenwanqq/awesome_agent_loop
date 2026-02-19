@@ -28,9 +28,9 @@
 
 但是这个项目除外，因为我追求的不是成品（你可以找到一大堆agent loop，nanobot,deepAgents等），这个项目的宗旨是Learn By Doing，通过实践来掌握agent的底层设计（相当简单！）
 
-总的来说，tools基本是使用claude code和open code生成的，各种agent loop的形态尽管少不了trae提供的AI补全，但是大部分代码行可以认为都是人工编写的
+总的来说，tools基本是使用claude code和open code生成的，各种agent loop的形态尽管少不了trae提供的AI补全，但是大部分代码行可以认为是人工编写的
 
-我会用AI生成一些中间性质的文档，但最终我会把这一过程中的实现细节以及思考用自己的语言写成一篇（或多篇文章）
+我会用AI生成一些中间性质的文档，但最终我会把这一过程中的实现细节以及思考用自己的语言写成一篇（或多篇）文章。
 
 ## 计划
 [x] 1. 一个简单ReAct循环
