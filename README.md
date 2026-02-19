@@ -55,5 +55,6 @@
 
 ## 参考资料
 
-* [https://agentic-patterns.com](https://agentic-patterns.com)
-* [nanobot](https://github.com/HKUDS/nanobot)
+* [各种agent模式](https://agentic-patterns.com)
+* [部分代码的直接参考-nanobot](https://github.com/HKUDS/nanobot)
+* [比我更完善更全面的教程-从零开始构建智能体](https://github.com/datawhalechina/hello-agents)
