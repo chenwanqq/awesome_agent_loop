@@ -180,9 +180,11 @@ def get_openai_tool_schema(func: Callable) -> dict:
     Returns:
         {
             "type": "function",
-            "name": "function_name",
-            "description": "...",
-            "parameters": {...}
+            "function": {
+                "name": "function_name",
+                "description": "...",
+                "parameters": {...}
+            }
         }
     """
     docstring = inspect.getdoc(func) or ""
@@ -192,7 +194,9 @@ def get_openai_tool_schema(func: Callable) -> dict:
 
     return {
         "type": "function",
-        "name": func.__name__,
-        "description": description,
-        "parameters": input_schema,
+        "function": {
+            "name": func.__name__,
+            "description": description,
+            "parameters": input_schema,
+        }
     }
