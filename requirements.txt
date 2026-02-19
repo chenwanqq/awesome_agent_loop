@@ -10,4 +10,3 @@ tavily-python
 # CLI 美化输出
 rich
 
-pynput

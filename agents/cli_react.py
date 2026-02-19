@@ -5,6 +5,7 @@ from tools import Tool, tavily_search, tavily_extract, read_file, write_file, ed
 from typing import Literal,Optional
 import json
 from rich.console import Console
+from datetime import datetime
 
 dotenv.load_dotenv()
 '''
@@ -17,9 +18,21 @@ response = completion(
 print(response.choices[0].message)
 '''
 
+def build_system_prompt(system_prompt: str = None, use_agents_md: bool = True, use_date: bool = True) -> str:
+    system_prompt = system_prompt or ""
+    if use_agents_md:
+        #在当前位置寻找agents.md(不区分大小写)，返回真正的文件名
+        agents_md = next((f for f in os.listdir() if f.lower() == "agents.md"), None)
+        if agents_md:
+            with open(agents_md, "r") as f:
+                system_prompt += f.read()
+    if use_date:
+        system_prompt += f"当前日期是{datetime.now().strftime('%Y-%m-%d')}"
+
+    return system_prompt
 
 class Agent:
-    def __init__(self, model: str, base_url: str, api_key: str, system_prompt: str, tools: list[Tool] = []):
+    def __init__(self, model: str, base_url: str, api_key: str, system_prompt: str, tools: list[Tool] = [],timeout: int = 120):
         self.model = model
         self.base_url = base_url
         self.api_key = api_key
@@ -27,6 +40,7 @@ class Agent:
         self.tools = tools
         self.tool_schema = [tool.openai_schema for tool in self.tools]
         self.tool_dict = {tool.name: tool for tool in self.tools}
+        self.timeout = timeout
 
     # 暂时只返回str
     def run(self, query: str, max_turns: int = 20, messages: Optional[list[dict]] = None, verbose: Literal["none", "debug", "auto"] = "auto"):
@@ -46,7 +60,8 @@ class Agent:
                     api_key=self.api_key,
                     messages=messages,
                     tools=self.tool_schema,
-                    tool_choice="auto"
+                    tool_choice="auto",
+                    timeout = self.timeout
                 )
             else:
                 messages.append(
@@ -63,6 +78,7 @@ class Agent:
             message = response.choices[0].message
 
             if verbose == "auto":
+                yield "<think>" + message.reasoning_content + "</think>"
                 yield message.content
             elif verbose == "debug":
                 yield response
@@ -135,8 +151,14 @@ class CLI:
                     messages = []
                     continue
             
-            for message in self.agent.run(query, messages=messages):
-                self.console.print(message)
+            try:
+                for message in self.agent.run(query, messages=messages):
+                    self.console.print(message)
+            except KeyboardInterrupt:
+                continue
+            except Exception as e:
+                self.console.print(f"发生错误：{e}")
+                continue
             
 
 
@@ -145,7 +167,7 @@ if __name__ == "__main__":
         model=f"openai/{os.getenv('OPENAI_MODEL_NAME')}",
         base_url=os.getenv("OPENAI_BASE_URL"),
         api_key=os.getenv("OPENAI_API_KEY"),
-        system_prompt="你是一个智能助手",
+        system_prompt=build_system_prompt("你是一个智能助手"),
         tools=[tavily_search, tavily_extract, read_file,
                write_file, edit_file, list_dir, exec]
     )
