@@ -1,0 +1,13 @@
+# LLM API 调用
+litellm
+
+# 环境变量管理
+python-dotenv
+
+# Tavily 搜索 API
+tavily-python
+
+# CLI 美化输出
+rich
+
+pynput
