@@ -14,6 +14,7 @@ class Tool:
     def __init__(self, func: Callable):
         functools.update_wrapper(self, func)
         self.func = func
+        self.name = func.__name__
         self._input_schema = None
         self._output_schema = None
         self._openai_schema = None
