@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 import re
-from typing import Any, Callable, Literal, Optional, Union, get_args, get_origin
+from typing import Any, Callable, Literal, Optional, Union, get_args, get_origin, get_type_hints
 from types import UnionType
 
 
@@ -25,7 +25,8 @@ def _get_type_schema(py_type: Any) -> dict:
         return {"type": "object"}
 
     # 处理 Literal（枚举）
-    if origin is Literal:
+    # 兼容不同 Python 版本：get_origin 可能返回 typing.Literal 而不是 Literal
+    if origin is Literal or str(origin) == "typing.Literal":
         return {"type": "string", "enum": list(args)}
 
     # 处理 List
@@ -48,7 +49,6 @@ def _get_type_schema(py_type: Any) -> dict:
         bool: {"type": "boolean"},
         dict: {"type": "object"},
         list: {"type": "array"},
-        Any: {"type": "string"}, #fallback
     }
 
     return type_map.get(py_type, {"type": "object"})
@@ -130,8 +130,8 @@ def get_input_schema(func: Callable) -> dict:
         }
     """
     sig = inspect.signature(func)
-    type_hints = func.__annotations__
     docstring = inspect.getdoc(func) or ""
+    type_hints = get_type_hints(func)
 
     _, param_descriptions = _parse_google_docstring(docstring)
 
@@ -168,7 +168,7 @@ def get_output_schema(func: Callable) -> dict:
     Returns:
         JSON Schema object
     """
-    type_hints = func.__annotations__
+    type_hints = get_type_hints(func)
     return_type = type_hints.get("return", Any)
 
     return _get_type_schema(return_type)

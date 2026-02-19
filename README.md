@@ -6,7 +6,7 @@
 
 ## 基础
 
-我们将使用litellm来处理llm调用
+我们将使用litellm来处理llm调用，同时用vibe的方式去实现tools，把学习的重点放在agent loop上
 
 ## 计划
 
