@@ -40,6 +40,8 @@
     [x] CLI与多轮对话
     [x] 处理中断
     [ ] session与continue
+    [ ] plan模式
+    [ ] todo list
     [ ] 上下文压缩
 [ ] 3. 一个claw式的主动、持久的Agent
     [ ] 分层记忆
