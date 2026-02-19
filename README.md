@@ -13,12 +13,12 @@
     [x] 1.0 tool call
     [x] 1.1 单轮对话的Agent Loop
 [ ] 2. 一个CLI多轮对话Agent工具
-    [ ] 1.2 CLI与多轮对话
-    [ ] 1.3 处理打断
+    [x] 1.2 CLI与多轮对话
+    [x] 1.3 处理打断
     [ ] 1.4 Skill以及更复杂的system prompt的组合
     [ ] 1.5 流式输出
     [ ] 1.6 session
-    [ ] 1.7 权限与
+    [ ] 1.7 权限
     [ ] 1.8 mcp
     [ ] 1.9 hook
 [ ] 3. 记忆功能

@@ -32,7 +32,8 @@ def build_system_prompt(system_prompt: str = None, use_agents_md: bool = True, u
     return system_prompt
 
 class Agent:
-    def __init__(self, model: str, base_url: str, api_key: str, system_prompt: str, tools: list[Tool] = [],timeout: int = 120):
+    def __init__(self, model: str, base_url: str, api_key: str, system_prompt: str, tools: list[Tool] = []
+    ,timeout: int = 120,verbose: Literal["none", "debug", "auto"] = "auto",max_turns: int = 20):
         self.model = model
         self.base_url = base_url
         self.api_key = api_key
@@ -41,9 +42,13 @@ class Agent:
         self.tool_schema = [tool.openai_schema for tool in self.tools]
         self.tool_dict = {tool.name: tool for tool in self.tools}
         self.timeout = timeout
+        self.verbose = verbose
+        self.max_turns = max_turns
 
     # 暂时只返回str
-    def run(self, query: str, max_turns: int = 20, messages: Optional[list[dict]] = None, verbose: Literal["none", "debug", "auto"] = "auto"):
+    def run(self, query: str, messages: Optional[list[dict]] = None):
+        verbose = self.verbose
+        max_turns = self.max_turns
         if messages is None:
             messages = []
         
@@ -87,6 +92,7 @@ class Agent:
                 messages.append({"role": message.role,
                                 "content": message.content,
                                 "reasoning_content": message.reasoning_content})
+                yield response.usage
                 return
 
             # add tool calling message
@@ -169,7 +175,7 @@ if __name__ == "__main__":
         api_key=os.getenv("OPENAI_API_KEY"),
         system_prompt=build_system_prompt("你是一个智能助手"),
         tools=[tavily_search, tavily_extract, read_file,
-               write_file, edit_file, list_dir, exec]
+               write_file, edit_file, list_dir, exec],
     )
     cli = CLI(agent)
     cli.run()
