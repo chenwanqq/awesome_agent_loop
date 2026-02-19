@@ -12,14 +12,19 @@
 [ ] 1. 简单ReAct循环
     [x] 1.0 tool call
     [x] 1.1 单轮对话的Agent Loop
+[ ] 2. 一个CLI多轮对话Agent工具
     [ ] 1.2 CLI与多轮对话
     [ ] 1.3 处理打断
     [ ] 1.4 Skill以及更复杂的system prompt的组合
-[ ] 2. 记忆功能
-    [ ] 2.1 结构化上下文
-    [ ] 2.2 类claw式的分层记忆
-    [ ] 2.3 上下文压缩
-[ ] 3. 如何处理打断
+    [ ] 1.5 流式输出
+    [ ] 1.6 session
+    [ ] 1.7 权限与
+    [ ] 1.8 mcp
+    [ ] 1.9 hook
+[ ] 3. 记忆功能
+    [ ] 3.1 结构化上下文
+    [ ] 3.2 类claw式的分层记忆
+    [ ] 3.3 上下文压缩
 [ ] 4. multiAgent
     [ ] 4.1 串行subAgent(sub agent as a tool)
     [ ] 4.2 Agent Teams（后台并行执行，相互通信）

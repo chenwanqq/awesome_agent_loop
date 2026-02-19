@@ -5,6 +5,7 @@ from tools import Tool, tavily_search, tavily_extract, read_file, write_file, ed
 from typing import Literal
 import json
 
+
 dotenv.load_dotenv()
 '''
 response = completion(
@@ -102,7 +103,7 @@ class Agent:
 
 if __name__ == "__main__":
     agent = Agent(
-        model="openai/kimi-k2.5",
+        model=f"openai/{os.getenv('OPENAI_MODEL_NAME')}",
         base_url=os.getenv("OPENAI_BASE_URL"),
         api_key=os.getenv("OPENAI_API_KEY"),
         system_prompt="你是一个智能助手",
