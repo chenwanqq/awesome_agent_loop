@@ -42,10 +42,9 @@
 [ ] 2. 一个CLI多轮对话Agent工具
     [x] CLI与多轮对话
     [x] 处理中断
-    [ ] session与continue
     [ ] plan模式
     [ ] todo list
-    [ ] 上下文压缩
+    [ ] 上下文压缩与滑动窗口
 [ ] 3. 一个claw式的主动、持久的Agent
     [ ] 分层记忆
     [ ] 定时任务
