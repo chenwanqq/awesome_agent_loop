@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from typing import Any, Literal, Optional
 
-from .decorator import tool
+from .decorator import tool, Permission
 
 
 def _get_tavily_client():
@@ -30,7 +30,7 @@ def _get_tavily_client():
     return TavilyClient(api_key=api_key)
 
 
-@tool
+@tool(default_permission=Permission.ALLOW)
 def tavily_search(
     query: str,
     search_depth: Literal["basic", "advanced", "fast", "ultra-fast"] = "basic",
@@ -88,7 +88,7 @@ def tavily_search(
     return client.search(**params)
 
 
-@tool
+@tool(default_permission=Permission.ALLOW)
 def tavily_extract(
     url: str,
     extract_depth: Literal["basic", "advanced"] = "basic",

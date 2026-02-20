@@ -27,7 +27,7 @@ Example:
     print(search_weather.output_schema)   # 输出 schema
 """
 
-from .decorator import tool, Tool
+from .decorator import tool, Tool, Permission
 from .schema import get_input_schema, get_output_schema, get_openai_tool_schema
 from .system_tools import read_file, write_file, edit_file, list_dir, exec
 from .tavily_tools import tavily_search, tavily_extract
@@ -35,6 +35,7 @@ from .tavily_tools import tavily_search, tavily_extract
 __all__ = [
     "tool",
     "Tool",
+    "Permission",
     "get_input_schema",
     "get_output_schema",
     "get_openai_tool_schema",

@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-from .decorator import tool
+from .decorator import tool, Permission
 
 
 MAX_OUTPUT_LENGTH = 10000
@@ -28,7 +28,7 @@ def _get_full_path(path: str) -> Path:
     return Path(path).expanduser().resolve()
 
 
-@tool
+@tool(default_permission=Permission.ALLOW)
 def read_file(path: str, limit: int = 1000, offset: int = 1) -> str:
     """读取文件内容
 
@@ -142,7 +142,7 @@ def edit_file(path: str, old_text: str, new_text: str) -> str:
         return f"error: Failed to edit file: {e}"
 
 
-@tool
+@tool(default_permission=Permission.ALLOW)
 def list_dir(path: str = ".") -> str:
     """列出目录内容
 
