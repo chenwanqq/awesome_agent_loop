@@ -35,10 +35,14 @@
 我会用AI生成一些中间性质的文档，但最终我会把这一过程中的实现细节以及思考用自己的语言写成一篇（或多篇）文章。
 
 ## 计划
+
 [x] 1. 一个简单ReAct循环
+
     [x] tool call
     [x] 单轮对话的Agent Loop
+
 [ ] 2. 一个CLI多轮对话Agent工具
+    
     [x] CLI与多轮对话
     [x] 处理中断
     [ ] 权限（中间件）
@@ -46,11 +50,15 @@
     [ ] todo list
     [ ] 上下文压缩与滑动窗口
     [ ] session与continue
+
 [ ] 3. 一个claw式的主动、持久的Agent
+
     [ ] 分层记忆
     [ ] 定时任务
     [ ] skill，以及自进化（自行安装寻找skill）
+
 [ ] 4. multiAgent
+
     [ ] 串行subAgent(sub agent as a tool)
     [ ] Agent Teams（后台并行执行，相互通信）
 
