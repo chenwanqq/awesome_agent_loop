@@ -36,31 +36,31 @@
 
 ## 计划
 
-[x] 1. 一个简单ReAct循环
+- [x] 1. 一个简单ReAct循环
 
-    [x] tool call
-    [x] 单轮对话的Agent Loop
+    - [x] tool call
+    - [x] 单轮对话的Agent Loop
 
-[ ] 2. 一个CLI多轮对话Agent工具
+- [ ] 2. 一个CLI多轮对话Agent工具
     
-    [x] CLI与多轮对话
-    [x] 处理中断
-    [ ] 权限（中间件）
-    [ ] plan模式
-    [ ] todo list
-    [ ] 上下文压缩与滑动窗口
-    [ ] session与continue
+    - [x] CLI与多轮对话
+    - [x] 处理中断
+    - [ ] 权限（中间件）
+    - [ ] plan模式
+    - [ ] todo list
+    - [ ] 上下文压缩与滑动窗口
+    - [ ] session与continue
 
-[ ] 3. 一个claw式的主动、持久的Agent
+- [ ] 3. 一个claw式的主动、持久的Agent
 
-    [ ] 分层记忆
-    [ ] 定时任务
-    [ ] skill，以及自进化（自行安装寻找skill）
+    - [ ] 分层记忆
+    - [ ] 定时任务
+    - [ ] skill，以及自进化（自行安装寻找skill）
 
-[ ] 4. multiAgent
+- [ ] 4. multiAgent
 
-    [ ] 串行subAgent(sub agent as a tool)
-    [ ] Agent Teams（后台并行执行，相互通信）
+    - [ ] 串行subAgent(sub agent as a tool)
+    - [ ] Agent Teams（后台并行执行，相互通信）
 
 ## 实现细节
 
