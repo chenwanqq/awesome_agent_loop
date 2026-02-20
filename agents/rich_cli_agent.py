@@ -12,7 +12,8 @@ from datetime import datetime
 dotenv.load_dotenv()
 
 
-def build_system_prompt(system_prompt: str = None, use_agents_md: bool = True, use_date: bool = True) -> str:
+def build_system_prompt(system_prompt: str = None, use_agents_md: bool = True
+        , use_date: bool = True,mode: Literal["plan","default","auto_edit"] = "default") -> str:
     system_prompt = system_prompt or ""
     if use_agents_md:
         #在当前位置寻找agents.md(不区分大小写)，返回真正的文件名
@@ -22,6 +23,9 @@ def build_system_prompt(system_prompt: str = None, use_agents_md: bool = True, u
                 system_prompt += f.read()
     if use_date:
         system_prompt += f"当前日期是{datetime.now().strftime('%Y-%m-%d')}"
+    
+    if mode == "plan":
+        system_prompt += "你需要根据用户的问题，生成一个计划，包含计划的详细说明，以及要完成用户问题的步骤。在进行计划的时候不要调用编辑性质的工具，只调用查询、读取性质的工具"
 
     return system_prompt
 
@@ -145,6 +149,7 @@ class CLI:
         self.console = Console()
         self.override_authorization: dict[str,Permission] = dict()
         self.agent.authorization_hook = self.interactive_authorization
+        self._in_plan_mode = False
 
     def interactive_authorization(self, tool: Tool, tool_args: dict) -> bool:
         if tool.name in self.override_authorization and self.override_authorization[tool.name] == Permission.ALLOW:
@@ -175,6 +180,10 @@ class CLI:
                 case "/clear":
                     messages = []
                     continue
+            
+            if query.startswith("/plan"):
+                self._in_plan_mode = True
+                query = query[5:].strip()
             
             try:
                 for message in self.agent.run(query, messages=messages):
