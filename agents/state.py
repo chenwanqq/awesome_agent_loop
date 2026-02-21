@@ -18,6 +18,7 @@ class AgentState(BaseModel):
     todo_list: list = []
     name: str = generate_name()
     tmp_dir: str = ".tmp"
+    total_tokens: int = 0  # 当前上下文的token总数
 
     def clear_state(self):
         """清空状态，重置所有字段"""

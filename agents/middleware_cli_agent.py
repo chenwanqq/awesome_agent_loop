@@ -8,7 +8,7 @@ from rich.console import Console
 from datetime import datetime
 from prompt_toolkit import PromptSession
 import traceback
-from middlewares import Middleware, InteractiveAuthorizationMiddleware, SystemMiddleware, TavilyMiddleware, PersistMiddleware, TodoMiddleware
+from middlewares import Middleware, InteractiveAuthorizationMiddleware, SystemMiddleware, TavilyMiddleware, PersistMiddleware, TodoMiddleware, CompactMiddleware
 
 from agents.state import AgentState
 
@@ -228,6 +228,8 @@ class Agent:
                 )
 
             message = response.choices[0].message
+            self.state.total_tokens = response.usage.total_tokens
+            yield response.usage
 
             if verbose == "auto":
                 yield "<think>" + message.reasoning_content + "</think>"
@@ -247,7 +249,9 @@ class Agent:
                                             "reasoning_content": message.reasoning_content})
                 if self.state.current_mode == "plan":
                     yield "你可以使用/auto_edit或/default来切换模式，执行计划"
-                yield response.usage
+                
+                
+
                 for hook in self.post_response_hooks:
                     continue_execution, hook_msg = hook(self.state)
                     if hook_msg is not None:
@@ -366,8 +370,14 @@ class CLI:
             timeout=timeout,
             verbose=verbose,
             max_turns=max_turns,
-            middlewares=[InteractiveAuthorizationMiddleware(), SystemMiddleware(), TavilyMiddleware(
-            ), PersistMiddleware(tmp_dir=tmp_dir, initial_session_name=load_persist), TodoMiddleware()],
+            middlewares=[
+                InteractiveAuthorizationMiddleware(),
+                SystemMiddleware(),
+                TavilyMiddleware(),
+                PersistMiddleware(tmp_dir=tmp_dir, initial_session_name=load_persist),
+                TodoMiddleware(),
+                CompactMiddleware(tmp_dir=tmp_dir, model=model, api_key=api_key, base_url=base_url),
+            ],
         )
         self.session = PromptSession()
 
