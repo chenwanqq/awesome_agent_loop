@@ -12,6 +12,7 @@ from prompt_toolkit import PromptSession
 from pydantic import BaseModel
 import traceback
 from names_generator import generate_name
+from functools import partial
 
 # Import internal tools for todo management
 from internal_tools import (
@@ -47,13 +48,14 @@ class AgentState(BaseModel):
     messages: list[dict] = []
     current_mode: Literal["plan", "default", "auto_edit"] = "default"
     override_authorization: dict[str, Permission] = {}
-    extra_states: dict = {}
+    tmp_states: dict = {}
     todo_list: list = []  # 存储 todo 列表
     name: str = generate_name()
+    tmp_dir: str = ".tmp"
 
     def clear_state(self):
         self.messages = []
-        self.extra_states = {}
+        self.tmp_states = {}
         self.todo_list = []
         self.name = generate_name()
 
@@ -91,33 +93,41 @@ class Agent:
         self.post_response_hooks = post_response_hooks
         self.pre_llm_call_hooks = pre_llm_call_hooks
         self.post_llm_call_hooks = post_llm_call_hooks
-        self.tmp_dir = tmp_dir
+        
 
         all_hooks = [self.pre_user_query_hooks, self.post_user_query_hooks, self.pre_tool_use_hooks, self.post_tool_use_hooks,
                      self.pre_response_hooks, self.post_response_hooks, self.pre_llm_call_hooks, self.post_llm_call_hooks]
 
-        os.makedirs(self.tmp_dir, exist_ok=True)
+        os.makedirs(tmp_dir, exist_ok=True)
 
         if load_persist:
-            if not load_persist.endswith(".json"):
-                load_persist += ".json"
-
-            self.state = self._load_persist_from_file(
-                os.path.join(self.tmp_dir, load_persist))
+            # load_persist 是 session 名称
+            session_dir = os.path.join(tmp_dir, load_persist)
+            self.state = self._load_persist_from_file(session_dir)
         else:
             self.state = AgentState()
+            self.state.tmp_dir = tmp_dir
 
         if persist:
             for hook in all_hooks:
-                hook.append(self._save_persist_to_file)
+                hook.append(partial(self._save_persist_to_file))
 
-    def _save_persist_to_file(self, state: AgentState):
-        file_path = os.path.join(self.tmp_dir, f"{self.state.name}.json")
-        with open(file_path, "w") as f:
-            json.dump(state.model_dump(), f, indent=2)
+    def _save_persist_to_file(self, state: AgentState) -> tuple[bool, str]:
+        session_dir = os.path.join(state.tmp_dir,state.name)
+        if not os.path.isdir(session_dir):
+            os.makedirs(session_dir, exist_ok=True)
 
-    def _load_persist_from_file(self, file_path: str) -> AgentState:
-        with open(file_path, "r") as f:
+        file_path = os.path.join(session_dir, "conversation.json")
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(state.model_dump(exclude=["tmp_states"]), f, indent=2, ensure_ascii=False)
+        return True, None
+
+    def _load_persist_from_file(self, session_dir: str) -> AgentState:
+        if not os.path.isdir(session_dir):
+            os.makedirs(session_dir, exist_ok=True)
+
+        file_path = os.path.join(session_dir, "conversation.json")
+        with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
             return AgentState(**data)
 
@@ -141,8 +151,9 @@ class Agent:
 
         # 1. 执行 pre_user_query_hooks
         for hook in self.pre_user_query_hooks:
-            continue_execution, message = hook(self.state)
-            yield message
+            continue_execution, hook_msg = hook(self.state)
+            if hook_msg is not None:
+                yield hook_msg
             if not continue_execution:
                 return
 
@@ -152,17 +163,18 @@ class Agent:
         self.state.messages.append({"role": "user", "content": user_message})
 
         for hook in self.post_user_query_hooks:
-            continue_execution, message = hook(self.state)
-            yield message
+            continue_execution, hook_msg = hook(self.state)
+            if hook_msg is not None:
+                yield hook_msg
             if not continue_execution:
                 return
 
         for i in range(max_turns):
             if i < max_turns - 1:
                 for hook in self.pre_llm_call_hooks:
-                    continue_execution, message = hook(self.state)
-                    if message is not None:
-                        yield message
+                    continue_execution, hook_msg = hook(self.state)
+                    if hook_msg is not None:
+                        yield hook_msg
 
                     if not continue_execution:
                         return
@@ -176,6 +188,13 @@ class Agent:
                     tool_choice="auto",
                     timeout=self.timeout
                 )
+
+                for hook in self.post_llm_call_hooks:
+                    continue_execution, hook_msg = hook(self.state)
+                    if hook_msg is not None:
+                        yield hook_msg
+                    if not continue_execution:
+                        return
             else:
                 self.state.messages.append(
                     {"role": "user", "content": "本轮对话还剩最后一次LLM调用机会，你不能再调用tool了，必须根据现有的结果生成最终的回答"})
@@ -198,9 +217,9 @@ class Agent:
 
             if message.tool_calls is None or len(message.tool_calls) == 0:
                 for hook in self.pre_response_hooks:
-                    continue_execution, message = hook(self.state)
-                    if message is not None:
-                        yield message
+                    continue_execution, hook_msg = hook(self.state)
+                    if hook_msg is not None:
+                        yield hook_msg
                     if not continue_execution:
                         return
                 self.state.messages.append({"role": message.role,
@@ -210,9 +229,9 @@ class Agent:
                     yield "你可以使用/auto_edit或/default来切换模式，执行计划"
                 yield response.usage
                 for hook in self.post_response_hooks:
-                    continue_execution, message = hook(self.state)
-                    if message is not None:
-                        yield message
+                    continue_execution, hook_msg = hook(self.state)
+                    if hook_msg is not None:
+                        yield hook_msg
                     if not continue_execution:
                         return
                 return
@@ -237,10 +256,10 @@ class Agent:
                     yield f"警告：工具 {tool_name} 不存在"
                     continue
 
-                # 设置当前工具上下文到 extra_states
+                # 设置当前工具上下文到 tmp_states
                 current_tool = tool if tool else internal_tool
-                self.state.extra_states["current_tool"] = current_tool
-                self.state.extra_states["current_tool_args"] = tool_args
+                self.state.tmp_states["current_tool"] = current_tool
+                self.state.tmp_states["current_tool_args"] = tool_args
 
                 for pre_tool_use_hook in self.pre_tool_use_hooks:
                     tool_call_flag, msg = pre_tool_use_hook(self.state)
@@ -261,6 +280,10 @@ class Agent:
                 except Exception as e:
                     if verbose in ["debug", "auto"]:
                         yield f"工具 {tool_name} 执行异常：{e}"
+                    self.state.messages.append({"role": "tool",
+                                                    "content": f"工具 {tool_name} 执行异常，{e}",
+                                                    "tool_call_id": tool_call.id,
+                                                    "name": tool_name})
                     continue
 
                 if result is None and verbose in ["debug", "auto"]:
@@ -297,9 +320,24 @@ class CLI:
     def __init__(self, model: str, base_url: str, api_key: str,
                  system_prompt: str, tools: list[Tool] = [],
                  timeout: int = 120, verbose: Literal["none", "debug", "auto"] = "auto",
-                 max_turns: int = 20):
+                 max_turns: int = 20, tmp_dir: str = ".tmp",
+                 resume: Optional[str] = None):
 
         self.console = Console()
+        self.tmp_dir = tmp_dir
+
+        # 处理 --resume 逻辑
+        load_persist = None
+        if resume is not None:
+            if resume == "":
+                # --resume 无参数，列出所有可用会话
+                self._list_saved_states()
+                self.agent = None  # 标记为未初始化，不进入交互模式
+                return
+            else:
+                # --resume {name}
+                load_persist = resume
+
         self.agent = Agent(
             model=model,
             base_url=base_url,
@@ -310,14 +348,46 @@ class CLI:
             timeout=timeout,
             verbose=verbose,
             max_turns=max_turns,
+            tmp_dir=tmp_dir,
+            load_persist=load_persist,
             pre_tool_use_hooks=[self.interactive_authorization],
             pre_llm_call_hooks=[add_todo_message],
         )
         self.session = PromptSession()
 
+    def _list_saved_states(self):
+        """列出所有保存的会话"""
+        if not os.path.exists(self.tmp_dir):
+            self.console.print(f"[yellow]目录 {self.tmp_dir} 不存在，没有保存的会话。[/yellow]")
+            return
+
+        # 查找所有子目录
+        entries = [d for d in os.listdir(self.tmp_dir)
+                   if os.path.isdir(os.path.join(self.tmp_dir, d))]
+
+        # 过滤出有 conversation.json 的目录
+        sessions = []
+        for entry in entries:
+            conv_path = os.path.join(self.tmp_dir, entry, "conversation.json")
+            if os.path.exists(conv_path):
+                sessions.append(entry)
+
+        if not sessions:
+            self.console.print(f"[yellow]目录 {self.tmp_dir} 中没有保存的会话。[/yellow]")
+            return
+
+        self.console.print("[green]可用的会话：[/green]")
+        for session_name in sorted(sessions):
+            session_dir = os.path.join(self.tmp_dir, session_name)
+            conv_path = os.path.join(session_dir, "conversation.json")
+            mtime = os.path.getmtime(conv_path)
+            time_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+            size = os.path.getsize(conv_path)
+            self.console.print(f"  • {session_name} (修改时间: {time_str}, 大小: {size} bytes)")
+
     def interactive_authorization(self, state: AgentState) -> tuple[bool, str]:
-        tool = state.extra_states["current_tool"]
-        tool_args = state.extra_states["current_tool_args"]
+        tool = state.tmp_states["current_tool"]
+        tool_args = state.tmp_states["current_tool_args"]
 
         if state.current_mode == "auto_edit":
             return True, None
@@ -340,6 +410,10 @@ class CLI:
                 return False, f"工具 {tool.name} 执行被拒绝"
 
     def run(self):
+        # 如果 agent 未初始化（如 --resume 无参数时），直接返回
+        if self.agent is None:
+            return
+
         self.console.print("欢迎使用智能助手")
         while True:
             if self.agent.state.current_mode == "plan":
@@ -382,6 +456,15 @@ class CLI:
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="智能助手 CLI")
+    parser.add_argument("--resume", nargs="?", const="", default=None,
+                       help="恢复保存的会话。不带参数时列出所有可用会话，带参数时加载指定会话。")
+    parser.add_argument("--tmp-dir", default=".tmp",
+                       help="指定状态持久化目录 (默认: .tmp)")
+    args = parser.parse_args()
+
     cli = CLI(
         model=f"openai/{os.getenv('OPENAI_MODEL_NAME')}",
         base_url=os.getenv("OPENAI_BASE_URL"),
@@ -390,5 +473,10 @@ if __name__ == "__main__":
             "你是一个智能助手.如果遇到复杂的问题，请你调用todo相关的工具，创建并维护todo list以帮助你完成任务"),
         tools=[tavily_search, tavily_extract, read_file,
                write_file, edit_file, list_dir, exec],
+        tmp_dir=args.tmp_dir,
+        resume=args.resume
     )
-    cli.run()
+
+    # 只有在 agent 初始化成功时才运行交互循环
+    if cli.agent is not None:
+        cli.run()
