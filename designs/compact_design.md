@@ -1,6 +1,6 @@
 # 上下文压缩设计
 
-**应用于state_cli_agent.py**
+**应用于middleware_cli_agent.py**
 
 ## 触发时机
 1. 手动执行/compact指令
@@ -31,5 +31,8 @@
 
 ## 实现细节
 
-1. 在AgentState中保存当前的total_tokens(从每次返回的Usage中获取并更新，使用一个InternalTool在post_llm_call_hook中实现，clear_state时要重置为0)
-2. 实现一个单独的InternalTool，用于压缩上下文，在pre_llm_call_hook中调用，在调用时判断是否需要压缩上下文，如果需要则调用压缩上下文的InternalTool，压缩完成后更新total_tokens
+1. 在AgentState中增加一个total_tokens参数
+2. 使用Middleware机制实现上下文压缩功能
+    * 增加一个hook用于压缩上下文，在pre_llm_call_hook中调用；
+    * 增加一个更新total_tokens的hook，在post_llm_call_hook中调用；
+3. 使用middleware，新增一个/compact 指令，用于手动触发上下文压缩

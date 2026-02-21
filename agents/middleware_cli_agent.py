@@ -63,6 +63,12 @@ class Agent:
 
         self.state = AgentState()
 
+        # 初始化 slash_cmd 字典
+        self.slash_cmd = {}
+        self._register_builtin_slash_cmds()
+        for middleware in middlewares:
+            self.slash_cmd.update(middleware.slash_cmds())
+
         # 初始化中间件
         for middleware in middlewares:
             middleware.agent_init_func(self.state)
@@ -87,6 +93,66 @@ class Agent:
 
     def clear_state(self):
         self.state.clear_state()
+
+    def _register_builtin_slash_cmds(self):
+        """注册内置斜杠命令"""
+        self.slash_cmd["exit"] = self._cmd_exit
+        self.slash_cmd["clear"] = self._cmd_clear
+        self.slash_cmd["plan"] = self._cmd_plan
+        self.slash_cmd["auto_edit"] = self._cmd_auto_edit
+        self.slash_cmd["default"] = self._cmd_default
+
+    @staticmethod
+    def _cmd_exit(state: AgentState):
+        """/exit 命令 - 退出 CLI"""
+        return False, None  # should_continue=False, 退出循环
+
+    @staticmethod
+    def _cmd_clear(state: AgentState):
+        """/clear 命令 - 清空状态"""
+        state.clear_state()
+        return True, None  # should_continue=True, 继续循环
+
+    @staticmethod
+    def _cmd_plan(state: AgentState):
+        """/plan 命令 - 切换到 plan 模式"""
+        state.current_mode = "plan"
+        return True, None
+
+    @staticmethod
+    def _cmd_auto_edit(state: AgentState):
+        """/auto_edit 命令 - 切换到 auto_edit 模式"""
+        state.current_mode = "auto_edit"
+        return True, None
+
+    @staticmethod
+    def _cmd_default(state: AgentState):
+        """/default 命令 - 切换到 default 模式"""
+        state.current_mode = "default"
+        return True, None
+
+    def register_slash_cmd(self, name: str, handler: callable):
+        """注册新的斜杠命令
+
+        Args:
+            name: 命令名称（不含 / 前缀）
+            handler: 处理函数，接收 AgentState 参数，返回 (continue_execution, result)
+                    handler 签名: fn(state: AgentState) -> tuple[bool, any]
+        """
+        self.slash_cmd[name] = handler
+
+    def execute_slash_cmd(self, cmd: str) -> tuple[bool, any]:
+        """执行斜杠命令
+
+        Args:
+            cmd: 命令名称（不含 / 前缀）
+
+        Returns:
+            (是否继续运行, 执行结果/输出消息)
+        """
+        if cmd in self.slash_cmd:
+            return self.slash_cmd[cmd](self.state)
+        return True, f"[red]未知命令: /{cmd}[/red]"
 
     def get_messages(self) -> list[dict]:
         """获取当前消息列表"""
@@ -386,24 +452,14 @@ class CLI:
 
             query = self.session.prompt(prompt_text)
 
-            match query:
-                case "exit":
+            if query.startswith("/"):
+                cmd = query[1:]  # 去掉 / 前缀
+                continue_execution, result = self.agent.execute_slash_cmd(cmd)
+                if result is not None:
+                    self.console.print(result)
+                if not continue_execution:
                     break
-                case "/clear":
-                    self.agent.clear_state()
-                    continue
-
-                case "/plan":
-                    self.agent.state.current_mode = "plan"
-                    continue
-
-                case "/auto_edit":
-                    self.agent.state.current_mode = "auto_edit"
-                    continue
-
-                case "/default":
-                    self.agent.state.current_mode = "default"
-                    continue
+                continue
 
             try:
                 for message in self.agent.run(query):

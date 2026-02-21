@@ -18,6 +18,10 @@ class Middleware(ABC):
         """额外的系统消息，追加到system message后面"""
         return None
 
+    def slash_cmds(self) -> dict[str, callable]:
+        """返回中间件提供的斜杠命令字典"""
+        return {}
+
     def tools(self) -> list[Tool]:
         """返回中间件提供的工具列表"""
         return []
