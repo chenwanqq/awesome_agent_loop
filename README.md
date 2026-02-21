@@ -48,7 +48,7 @@
     - [x] 权限（中间件）
     - [x] plan模式 (**agents/rich_cli_agent.py**)
     - [x] todo list
-    - [ ] 持久化: session与continue
+    - [x] 持久化: session与continue
     - [ ] 上下文压缩与滑动窗口
 
 - [ ] 3. 一个claw式的主动、持久的Agent
