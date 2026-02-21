@@ -43,23 +43,30 @@ class Agent:
         self.max_turns = max_turns
         self.authorization_hook = authorization_hook
         self.current_mode: Literal["plan", "default", "auto_edit"] = "default"
+        self.messages: list[dict] = []
+
+    def clear_messages(self):
+        """清空消息历史"""
+        self.messages = []
+
+    def get_messages(self) -> list[dict]:
+        """获取当前消息列表"""
+        return self.messages.copy()
 
     # 暂时只返回str
-    def run(self, query: str, messages: Optional[list[dict]] = None):
+    def run(self, query: str):
         verbose = self.verbose
         max_turns = self.max_turns
-        if messages is None:
-            messages = []
 
-        if len(messages) == 0 and self.system_prompt:
-            messages.append({"role": "system", "content": self.system_prompt})
+        if not self.messages and self.system_prompt:
+            self.messages.append({"role": "system", "content": self.system_prompt})
 
         user_message = query
 
         if self.current_mode == "plan":
             user_message = f"根据用户的问题，生成一个计划，包含计划的详细说明，以及要完成用户问题的步骤。在进行计划的时候不要调用编辑性质的工具，只调用查询、读取性质的工具。用户问题是：{query}"
 
-        messages.append({"role": "user", "content": user_message})
+        self.messages.append({"role": "user", "content": user_message})
 
         for i in range(max_turns):
             if i < max_turns - 1:
@@ -67,19 +74,19 @@ class Agent:
                     model=self.model,
                     base_url=self.base_url,
                     api_key=self.api_key,
-                    messages=messages,
+                    messages=self.messages,
                     tools=self.tool_schema,
                     tool_choice="auto",
                     timeout=self.timeout
                 )
             else:
-                messages.append(
+                self.messages.append(
                     {"role": "user", "content": "本轮对话还剩最后一次LLM调用机会，你不能再调用tool了，必须根据现有的结果生成最终的回答"})
                 response = completion(
                     model=self.model,
                     base_url=self.base_url,
                     api_key=self.api_key,
-                    messages=messages,
+                    messages=self.messages,
                     tools=self.tool_schema,
                     tool_choice="none"
                 )
@@ -93,7 +100,7 @@ class Agent:
                 yield response
 
             if message.tool_calls is None or len(message.tool_calls) == 0:
-                messages.append({"role": message.role,
+                self.messages.append({"role": message.role,
                                 "content": message.content,
                                  "reasoning_content": message.reasoning_content})
                 if self.current_mode == "plan":
@@ -102,7 +109,7 @@ class Agent:
                 return
 
             # add tool calling message
-            messages.append({
+            self.messages.append({
                 "role": message.role,
                 "content": message.content,
                 "tool_calls": message.tool_calls,
@@ -120,7 +127,7 @@ class Agent:
 
                 if self.authorization_hook is not None and self.current_mode != "auto_edit" and not self.authorization_hook(tool, tool_args):
                     yield f"工具 {tool_name} 执行被拒绝"
-                    messages.append({"role": "tool",
+                    self.messages.append({"role": "tool",
                                 "content": f"工具 {tool_name} 执行被拒绝",
                                  "tool_call_id": tool_call.id,
                                  "name": tool_name})
@@ -150,7 +157,7 @@ class Agent:
                         yield f"工具 {tool_name} 执行结果：{result_str[:100]}..."
 
                 # add tool result message
-                messages.append({"role": "tool",
+                self.messages.append({"role": "tool",
                                 "content": str(result),
                                  "tool_call_id": tool_call.id,
                                  "name": tool_name})
@@ -199,7 +206,6 @@ class CLI:
 
     def run(self):
         self.console.print("欢迎使用智能助手")
-        messages = []
         while True:
             if self.agent.current_mode == "plan":
                 prompt_text = "plan> "
@@ -214,7 +220,7 @@ class CLI:
                 case "exit":
                     break
                 case "/clear":
-                    messages = []
+                    self.agent.clear_messages()
                     continue
 
                 case "/plan":
@@ -230,7 +236,7 @@ class CLI:
                     continue
 
             try:
-                for message in self.agent.run(query, messages=messages):
+                for message in self.agent.run(query):
                     self.console.print(message)
             except KeyboardInterrupt:
                 continue
