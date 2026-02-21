@@ -1,117 +1,89 @@
 from litellm import completion
 import dotenv
 import os
-from tools import Tool, tavily_search, tavily_extract, read_file, write_file, edit_file, list_dir, exec
-from tools import Permission
+from tools import Tool
 from typing import Literal, Optional
 import json
 from rich.console import Console
-from rich.prompt import Prompt
 from datetime import datetime
 from prompt_toolkit import PromptSession
 import traceback
-from functools import partial
+from middlewares import Middleware, InteractiveAuthorizationMiddleware, SystemMiddleware, TavilyMiddleware, PersistMiddleware, TodoMiddleware
 
 from agents.state import AgentState
-
-# Import internal tools for todo management
-from internal_tools import (
-    create_todo,
-    edit_todo,
-    clear_todo,
-    add_todo_message,
-    get_todo,
-)
 
 
 dotenv.load_dotenv()
 
 
-def build_system_prompt(system_prompt: str = None, use_agents_md: bool = True, use_date: bool = True) -> str:
-    system_prompt = system_prompt or ""
-    if use_agents_md:
-        # 在当前位置寻找agents.md(不区分大小写)，返回真正的文件名
-        agents_md = next(
-            (f for f in os.listdir() if f.lower() == "agents.md"), None)
-        if agents_md:
-            with open(agents_md, "r") as f:
-                system_prompt += f.read()
-    if use_date:
-        system_prompt += f"当前日期是{datetime.now().strftime('%Y-%m-%d')}"
-
-    return system_prompt
-
-
 class Agent:
-    def __init__(self, model: str, base_url: str, api_key: str, system_prompt: Optional[str] = None, tools: list[Tool] = [], internal_tools: list = [], timeout: int = 120, verbose: Literal["none", "debug", "auto"] = "auto", max_turns: int = 20,
-                 persist: bool = True, load_persist: str = None, tmp_dir: str = ".tmp",
-                 pre_user_query_hooks: list[callable] = [],
-                 post_user_query_hooks: list[callable] = [],
-                 pre_tool_use_hooks: list[callable] = [],
-                 post_tool_use_hooks: list[callable] = [],
-                 pre_response_hooks: list[callable] = [],
-                 post_response_hooks: list[callable] = [],
-                 pre_llm_call_hooks: list[callable] = [],
-                 post_llm_call_hooks: list[callable] = []):
+    def __init__(self, model: str, base_url: str, api_key: str, system_prompt: Optional[str] = None, tools: list[Tool] = [],
+                 timeout: int = 120, verbose: Literal["none", "debug", "auto"] = "auto", max_turns: int = 20,
+                 middlewares: list[Middleware] = []):
         self.model = model
         self.base_url = base_url
         self.api_key = api_key
-        self.system_prompt = system_prompt
+        self.timeout = timeout
+        self.verbose = verbose
+        self.max_turns = max_turns
+        self.pre_user_query_hooks = []
+        self.post_user_query_hooks = []
+        self.pre_tool_use_hooks = []
+        self.post_tool_use_hooks = []
+        self.pre_response_hooks = []
+        self.post_response_hooks = []
+        self.pre_llm_call_hooks = []
+        self.post_llm_call_hooks = []
         self.tools = tools
-        self.internal_tools = internal_tools
+        self.internal_tools = []
+
+        # 构建系统提示
+        self.system_prompt = self._build_system_prompt(
+            system_prompt, middlewares=middlewares)
+
+        # 注册中间件钩子
+        for middleware in middlewares:
+            self.pre_user_query_hooks.extend(middleware.pre_user_query_hooks())
+            self.post_user_query_hooks.extend(
+                middleware.post_user_query_hooks())
+            self.pre_tool_use_hooks.extend(middleware.pre_tool_use_hooks())
+            self.post_tool_use_hooks.extend(middleware.post_tool_use_hooks())
+            self.pre_response_hooks.extend(middleware.pre_response_hooks())
+            self.post_response_hooks.extend(middleware.post_response_hooks())
+            self.pre_llm_call_hooks.extend(middleware.pre_llm_call_hooks())
+            self.post_llm_call_hooks.extend(middleware.post_llm_call_hooks())
+            self.tools.extend(middleware.tools())
+            self.internal_tools.extend(middleware.internal_tools())
+
         self.tool_schema = [tool.openai_schema for tool in self.tools] + \
             [it.openai_schema for it in self.internal_tools]
         self.tool_dict = {tool.name: tool for tool in self.tools}
         self.internal_tool_dict = {
             tool.name: tool for tool in self.internal_tools}
-        self.timeout = timeout
-        self.verbose = verbose
-        self.max_turns = max_turns
-        self.pre_user_query_hooks = pre_user_query_hooks
-        self.post_user_query_hooks = post_user_query_hooks
-        self.pre_tool_use_hooks = pre_tool_use_hooks
-        self.post_tool_use_hooks = post_tool_use_hooks
-        self.pre_response_hooks = pre_response_hooks
-        self.post_response_hooks = post_response_hooks
-        self.pre_llm_call_hooks = pre_llm_call_hooks
-        self.post_llm_call_hooks = post_llm_call_hooks
-        
 
-        all_hooks = [self.pre_user_query_hooks, self.post_user_query_hooks, self.pre_tool_use_hooks, self.post_tool_use_hooks,
-                     self.pre_response_hooks, self.post_response_hooks, self.pre_llm_call_hooks, self.post_llm_call_hooks]
+        self.state = AgentState()
 
-        os.makedirs(tmp_dir, exist_ok=True)
+        # 初始化中间件
+        for middleware in middlewares:
+            middleware.agent_init_func(self.state)
 
-        if load_persist:
-            # load_persist 是 session 名称
-            session_dir = os.path.join(tmp_dir, load_persist)
-            self.state = self._load_persist_from_file(session_dir)
-        else:
-            self.state = AgentState()
-            self.state.tmp_dir = tmp_dir
+    def _build_system_prompt(self, system_prompt: str = None, use_agents_md: bool = True, use_date: bool = True, middlewares: list[Middleware] = []) -> str:
+        system_prompt = system_prompt or ""
+        if use_agents_md:
+            # 在当前位置寻找agents.md(不区分大小写)，返回真正的文件名
+            agents_md = next(
+                (f for f in os.listdir() if f.lower() == "agents.md"), None)
+            if agents_md:
+                with open(agents_md, "r") as f:
+                    system_prompt += "\n" + f.read()
+        if use_date:
+            system_prompt += f"\n当前日期是{datetime.now().strftime('%Y-%m-%d')}"
 
-        if persist:
-            for hook in all_hooks:
-                hook.append(partial(self._save_persist_to_file))
+        for middleware in middlewares:
+            if middleware.aditional_system_message():
+                system_prompt += "\n" + middleware.aditional_system_message()
 
-    def _save_persist_to_file(self, state: AgentState) -> tuple[bool, str]:
-        session_dir = os.path.join(state.tmp_dir,state.name)
-        if not os.path.isdir(session_dir):
-            os.makedirs(session_dir, exist_ok=True)
-
-        file_path = os.path.join(session_dir, "conversation.json")
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(state.model_dump(exclude=["tmp_states"]), f, indent=2, ensure_ascii=False)
-        return True, None
-
-    def _load_persist_from_file(self, session_dir: str) -> AgentState:
-        if not os.path.isdir(session_dir):
-            os.makedirs(session_dir, exist_ok=True)
-
-        file_path = os.path.join(session_dir, "conversation.json")
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return AgentState(**data)
+        return system_prompt
 
     def clear_state(self):
         self.state.clear_state()
@@ -263,9 +235,9 @@ class Agent:
                     if verbose in ["debug", "auto"]:
                         yield f"工具 {tool_name} 执行异常：{e}"
                     self.state.messages.append({"role": "tool",
-                                                    "content": f"工具 {tool_name} 执行异常，{e}",
-                                                    "tool_call_id": tool_call.id,
-                                                    "name": tool_name})
+                                                "content": f"工具 {tool_name} 执行异常，{e}",
+                                                "tool_call_id": tool_call.id,
+                                                "name": tool_name})
                     continue
 
                 if result is None and verbose in ["debug", "auto"]:
@@ -300,7 +272,7 @@ class Agent:
 
 class CLI:
     def __init__(self, model: str, base_url: str, api_key: str,
-                 system_prompt: str, tools: list[Tool] = [],
+                 system_prompt: str,
                  timeout: int = 120, verbose: Literal["none", "debug", "auto"] = "auto",
                  max_turns: int = 20, tmp_dir: str = ".tmp",
                  resume: Optional[str] = None):
@@ -325,15 +297,11 @@ class CLI:
             base_url=base_url,
             api_key=api_key,
             system_prompt=system_prompt,
-            tools=tools,
-            internal_tools=[create_todo, edit_todo, clear_todo, get_todo],
             timeout=timeout,
             verbose=verbose,
             max_turns=max_turns,
-            tmp_dir=tmp_dir,
-            load_persist=load_persist,
-            pre_tool_use_hooks=[self.interactive_authorization],
-            pre_llm_call_hooks=[add_todo_message],
+            middlewares=[InteractiveAuthorizationMiddleware(), SystemMiddleware(), TavilyMiddleware(
+            ), PersistMiddleware(tmp_dir=tmp_dir, initial_session_name=load_persist), TodoMiddleware()],
         )
         self.session = PromptSession()
 
@@ -344,7 +312,8 @@ class CLI:
     def _list_saved_states(self):
         """列出所有保存的会话"""
         if not os.path.exists(self.tmp_dir):
-            self.console.print(f"[yellow]目录 {self.tmp_dir} 不存在，没有保存的会话。[/yellow]")
+            self.console.print(
+                f"[yellow]目录 {self.tmp_dir} 不存在，没有保存的会话。[/yellow]")
             return
 
         # 查找所有子目录
@@ -376,9 +345,11 @@ class CLI:
         for session_name, mtime in sessions_with_mtime:
             session_dir = os.path.join(self.tmp_dir, session_name)
             conv_path = os.path.join(session_dir, "conversation.json")
-            time_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+            time_str = datetime.fromtimestamp(
+                mtime).strftime('%Y-%m-%d %H:%M:%S')
             size = os.path.getsize(conv_path)
-            self.console.print(f"  • {session_name} (修改时间: {time_str}, 大小: {size} bytes)")
+            self.console.print(
+                f"  • {session_name} (修改时间: {time_str}, 大小: {size} bytes)")
 
     def _print_recent_history(self, count: int = 5, max_length: int = 100):
         """打印最近的历史消息"""
@@ -398,30 +369,6 @@ class CLI:
                     content = content[:max_length] + "..."
                 self.console.print(f"  [{role}] {content}")
             self.console.print()
-
-    def interactive_authorization(self, state: AgentState) -> tuple[bool, str]:
-        tool = state.tmp_states["current_tool"]
-        tool_args = state.tmp_states["current_tool_args"]
-
-        if state.current_mode == "auto_edit":
-            return True, None
-
-        if tool.name in state.override_authorization and state.override_authorization[tool.name] == Permission.ALLOW:
-            return True, None
-
-        if tool.default_permission == Permission.ALLOW:
-            return True, None
-
-        if tool.name not in state.override_authorization:
-            choice = Prompt.ask(f"是否授权执行工具 {tool.name}，参数 {tool_args}？", choices=[
-                                "yes", "no", "always"])
-            if choice == "yes":
-                return True, None
-            elif choice == "always":
-                state.override_authorization[tool.name] = Permission.ALLOW
-                return True, None
-            else:
-                return False, f"工具 {tool.name} 执行被拒绝"
 
     def run(self):
         # 如果 agent 未初始化（如 --resume 无参数时），直接返回
@@ -474,19 +421,16 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="智能助手 CLI")
     parser.add_argument("--resume", nargs="?", const="", default=None,
-                       help="恢复保存的会话。不带参数时列出所有可用会话，带参数时加载指定会话。")
+                        help="恢复保存的会话。不带参数时列出所有可用会话，带参数时加载指定会话。")
     parser.add_argument("--tmp-dir", default=".tmp",
-                       help="指定状态持久化目录 (默认: .tmp)")
+                        help="指定状态持久化目录 (默认: .tmp)")
     args = parser.parse_args()
 
     cli = CLI(
         model=f"moonshot/{os.getenv('OPENAI_MODEL_NAME')}",
         base_url=os.getenv("OPENAI_BASE_URL"),
         api_key=os.getenv("OPENAI_API_KEY"),
-        system_prompt=build_system_prompt(
-            "你是一个智能助手.如果遇到复杂的问题，请你调用todo相关的工具，创建并维护todo list以帮助你完成任务"),
-        tools=[tavily_search, tavily_extract, read_file,
-               write_file, edit_file, list_dir, exec],
+        system_prompt="你是一个智能助手.",
         tmp_dir=args.tmp_dir,
         resume=args.resume
     )
