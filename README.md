@@ -39,17 +39,17 @@
 - [x] 1. 一个简单ReAct循环
 
     - [x] tool call
-    - [x] 单轮对话的Agent Loop
+    - [x] 单轮对话的Agent Loop (**agents/simple_react.py**)
 
 - [ ] 2. 一个CLI多轮对话Agent工具
     
     - [x] CLI与多轮对话
-    - [x] 处理中断
+    - [x] 处理中断 (**agents/simple_cli_react.py**)
     - [x] 权限（中间件）
-    - [x] plan模式
-    - [ ] todo list
+    - [x] plan模式 (**agents/rich_cli_agent.py**)
+    - [x] todo list
     - [ ] 上下文压缩与滑动窗口
-    - [ ] session与continue
+    - [ ] 持久化: session与continue
 
 - [ ] 3. 一个claw式的主动、持久的Agent
 
