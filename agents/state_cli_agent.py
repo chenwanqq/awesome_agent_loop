@@ -355,6 +355,10 @@ class CLI:
         )
         self.session = PromptSession()
 
+        # 如果是恢复会话，打印最近的历史消息
+        if load_persist:
+            self._print_recent_history()
+
     def _list_saved_states(self):
         """列出所有保存的会话"""
         if not os.path.exists(self.tmp_dir):
@@ -376,14 +380,42 @@ class CLI:
             self.console.print(f"[yellow]目录 {self.tmp_dir} 中没有保存的会话。[/yellow]")
             return
 
-        self.console.print("[green]可用的会话：[/green]")
-        for session_name in sorted(sessions):
+        # 按修改时间排序，最新的放在最上面
+        sessions_with_mtime = []
+        for session_name in sessions:
             session_dir = os.path.join(self.tmp_dir, session_name)
             conv_path = os.path.join(session_dir, "conversation.json")
             mtime = os.path.getmtime(conv_path)
+            sessions_with_mtime.append((session_name, mtime))
+
+        sessions_with_mtime.sort(key=lambda x: x[1], reverse=True)
+
+        self.console.print("[green]可用的会话：[/green]")
+        for session_name, mtime in sessions_with_mtime:
+            session_dir = os.path.join(self.tmp_dir, session_name)
+            conv_path = os.path.join(session_dir, "conversation.json")
             time_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
             size = os.path.getsize(conv_path)
             self.console.print(f"  • {session_name} (修改时间: {time_str}, 大小: {size} bytes)")
+
+    def _print_recent_history(self, count: int = 5, max_length: int = 100):
+        """打印最近的历史消息"""
+        messages = self.agent.state.messages
+        # 过滤content不为空的消息
+        valid_messages = [m for m in messages if m.get("content")]
+        # 取最近count条
+        recent_messages = valid_messages[-count:]
+
+        if recent_messages:
+            self.console.print("\n[green]最近的历史消息：[/green]")
+            for msg in recent_messages:
+                role = msg.get("role", "unknown")
+                content = msg.get("content", "")
+                # 截断长内容
+                if len(content) > max_length:
+                    content = content[:max_length] + "..."
+                self.console.print(f"  [{role}] {content}")
+            self.console.print()
 
     def interactive_authorization(self, state: AgentState) -> tuple[bool, str]:
         tool = state.tmp_states["current_tool"]
