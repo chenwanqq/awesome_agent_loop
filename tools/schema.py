@@ -119,8 +119,12 @@ def _parse_google_docstring(docstring: str) -> tuple[str, dict[str, str]]:
     return description, param_descriptions
 
 
-def get_input_schema(func: Callable) -> dict:
+def get_input_schema(func: Callable, skip_first_param: bool = False) -> dict:
     """获取函数的输入参数 JSON Schema
+
+    Args:
+        func: 目标函数
+        skip_first_param: 是否跳过第一个参数（用于 InternalTool 跳过 state 参数）
 
     Returns:
         {
@@ -138,7 +142,11 @@ def get_input_schema(func: Callable) -> dict:
     properties = {}
     required = []
 
-    for name, param in sig.parameters.items():
+    params = list(sig.parameters.items())
+    if skip_first_param and params:
+        params = params[1:]  # 跳过第一个参数（state）
+
+    for name, param in params:
         if name == "self" or name == "cls":
             continue
 
@@ -174,8 +182,12 @@ def get_output_schema(func: Callable) -> dict:
     return _get_type_schema(return_type)
 
 
-def get_openai_tool_schema(func: Callable) -> dict:
+def get_openai_tool_schema(func: Callable, skip_first_param: bool = False) -> dict:
     """获取完整的 OpenAI 工具调用格式
+
+    Args:
+        func: 目标函数
+        skip_first_param: 是否跳过第一个参数（用于 InternalTool 跳过 state 参数）
 
     Returns:
         {
@@ -190,7 +202,7 @@ def get_openai_tool_schema(func: Callable) -> dict:
     docstring = inspect.getdoc(func) or ""
     description, _ = _parse_google_docstring(docstring)
 
-    input_schema = get_input_schema(func)
+    input_schema = get_input_schema(func, skip_first_param=skip_first_param)
 
     return {
         "type": "function",
@@ -198,5 +210,5 @@ def get_openai_tool_schema(func: Callable) -> dict:
             "name": func.__name__,
             "description": description,
             "parameters": input_schema,
-        }
+        },
     }

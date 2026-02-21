@@ -17,3 +17,5 @@ pydantic
 
 # JSON Schema 验证
 jsonschema>=4.17.0
+
+names-generator

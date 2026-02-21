@@ -25,4 +25,4 @@
 
 4. todo list存在于消息中的方式：如果存在todo list,那么使用在每次llm调用前，将原有的`<todo></todo>`包裹的message删除，插入一条user message，使用`<todo></todo>`包裹todo list；
 
-5. AgentLoop的修改仅限于hook_cli_agent.py;新加入的InternalTool和todo list的逻辑放在一个新的InternalTools文件夹下；
+5. AgentLoop的修改仅限于state_cli_agent.py;新加入的InternalTool和todo list的逻辑放在一个新的InternalTools文件夹下；

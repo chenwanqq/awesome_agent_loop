@@ -11,6 +11,7 @@ from datetime import datetime
 from prompt_toolkit import PromptSession
 from pydantic import BaseModel
 import traceback
+from names_generator import generate_name
 
 # Import internal tools for todo management
 from internal_tools import (
@@ -48,10 +49,18 @@ class AgentState(BaseModel):
     override_authorization: dict[str, Permission] = {}
     extra_states: dict = {}
     todo_list: list = []  # 存储 todo 列表
+    name: str = generate_name()
+
+    def clear_state(self):
+        self.messages = []
+        self.extra_states = {}
+        self.todo_list = []
+        self.name = generate_name()
 
 
 class Agent:
     def __init__(self, model: str, base_url: str, api_key: str, system_prompt: Optional[str] = None, tools: list[Tool] = [], internal_tools: list = [], timeout: int = 120, verbose: Literal["none", "debug", "auto"] = "auto", max_turns: int = 20,
+                 persist: bool = True, load_persist: str = None, tmp_dir: str = ".tmp",
                  pre_user_query_hooks: list[callable] = [],
                  post_user_query_hooks: list[callable] = [],
                  pre_tool_use_hooks: list[callable] = [],
@@ -82,13 +91,38 @@ class Agent:
         self.post_response_hooks = post_response_hooks
         self.pre_llm_call_hooks = pre_llm_call_hooks
         self.post_llm_call_hooks = post_llm_call_hooks
+        self.tmp_dir = tmp_dir
 
-        self.state = AgentState()
+        all_hooks = [self.pre_user_query_hooks, self.post_user_query_hooks, self.pre_tool_use_hooks, self.post_tool_use_hooks,
+                     self.pre_response_hooks, self.post_response_hooks, self.pre_llm_call_hooks, self.post_llm_call_hooks]
+
+        os.makedirs(self.tmp_dir, exist_ok=True)
+
+        if load_persist:
+            if not load_persist.endswith(".json"):
+                load_persist += ".json"
+
+            self.state = self._load_persist_from_file(
+                os.path.join(self.tmp_dir, load_persist))
+        else:
+            self.state = AgentState()
+
+        if persist:
+            for hook in all_hooks:
+                hook.append(self._save_persist_to_file)
+
+    def _save_persist_to_file(self, state: AgentState):
+        file_path = os.path.join(self.tmp_dir, f"{self.state.name}.json")
+        with open(file_path, "w") as f:
+            json.dump(state.model_dump(), f, indent=2)
+
+    def _load_persist_from_file(self, file_path: str) -> AgentState:
+        with open(file_path, "r") as f:
+            data = json.load(f)
+            return AgentState(**data)
 
     def clear_state(self):
-        self.state.messages = []
-        self.state.extra_states = {}
-        self.state.todo_list = []
+        self.state.clear_state()
 
     def get_messages(self) -> list[dict]:
         """获取当前消息列表"""
@@ -117,6 +151,12 @@ class Agent:
 
         self.state.messages.append({"role": "user", "content": user_message})
 
+        for hook in self.post_user_query_hooks:
+            continue_execution, message = hook(self.state)
+            yield message
+            if not continue_execution:
+                return
+
         for i in range(max_turns):
             if i < max_turns - 1:
                 for hook in self.pre_llm_call_hooks:
@@ -126,7 +166,7 @@ class Agent:
 
                     if not continue_execution:
                         return
-                        
+
                 response = completion(
                     model=self.model,
                     base_url=self.base_url,
@@ -157,12 +197,24 @@ class Agent:
                 yield response
 
             if message.tool_calls is None or len(message.tool_calls) == 0:
+                for hook in self.pre_response_hooks:
+                    continue_execution, message = hook(self.state)
+                    if message is not None:
+                        yield message
+                    if not continue_execution:
+                        return
                 self.state.messages.append({"role": message.role,
                                             "content": message.content,
                                             "reasoning_content": message.reasoning_content})
                 if self.state.current_mode == "plan":
                     yield "你可以使用/auto_edit或/default来切换模式，执行计划"
                 yield response.usage
+                for hook in self.post_response_hooks:
+                    continue_execution, message = hook(self.state)
+                    if message is not None:
+                        yield message
+                    if not continue_execution:
+                        return
                 return
 
             # add tool calling message
@@ -172,7 +224,7 @@ class Agent:
                 "tool_calls": message.tool_calls,
                 "reasoning_content": message.reasoning_content
             })
-            
+
             for tool_call in message.tool_calls:
                 tool_name = tool_call.function.name
                 tool_args = json.loads(tool_call.function.arguments)
@@ -196,9 +248,9 @@ class Agent:
                         yield msg
                     if not tool_call_flag:
                         self.state.messages.append({"role": "tool",
-                                                "content": f"工具 {tool_name} 执行失败，{msg}",
-                                                "tool_call_id": tool_call.id,
-                                                "name": tool_name})
+                                                    "content": f"工具 {tool_name} 执行失败，{msg}",
+                                                    "tool_call_id": tool_call.id,
+                                                    "name": tool_name})
                         return
 
                 try:
@@ -231,6 +283,14 @@ class Agent:
                                             "content": str(result),
                                             "tool_call_id": tool_call.id,
                                             "name": tool_name})
+
+                for post_tool_use_hook in self.post_tool_use_hooks:
+                    continue_execution, message = post_tool_use_hook(
+                        self.state)
+                    if message is not None:
+                        yield message
+                    if not continue_execution:
+                        return
 
 
 class CLI:
@@ -326,7 +386,8 @@ if __name__ == "__main__":
         model=f"openai/{os.getenv('OPENAI_MODEL_NAME')}",
         base_url=os.getenv("OPENAI_BASE_URL"),
         api_key=os.getenv("OPENAI_API_KEY"),
-        system_prompt=build_system_prompt("你是一个智能助手.如果遇到复杂的问题，请你调用todo相关的工具，创建并维护todo list以帮助你完成任务"),
+        system_prompt=build_system_prompt(
+            "你是一个智能助手.如果遇到复杂的问题，请你调用todo相关的工具，创建并维护todo list以帮助你完成任务"),
         tools=[tavily_search, tavily_extract, read_file,
                write_file, edit_file, list_dir, exec],
     )
