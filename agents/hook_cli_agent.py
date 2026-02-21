@@ -10,6 +10,16 @@ from rich.prompt import Prompt
 from datetime import datetime
 from prompt_toolkit import PromptSession
 from pydantic import BaseModel
+import traceback
+
+# Import internal tools for todo management
+from internal_tools import (
+    create_todo,
+    edit_todo,
+    clear_todo,
+    add_todo_message,
+    get_todo,
+)
 
 
 dotenv.load_dotenv()
@@ -30,28 +40,37 @@ def build_system_prompt(system_prompt: str = None, use_agents_md: bool = True, u
     return system_prompt
 
 # Same thought as LangGraph
+
+
 class AgentState(BaseModel):
     messages: list[dict] = []
     current_mode: Literal["plan", "default", "auto_edit"] = "default"
     override_authorization: dict[str, Permission] = {}
     extra_states: dict = {}
+    todo_list: list = []  # 存储 todo 列表
 
 
 class Agent:
-    def __init__(self, model: str, base_url: str, api_key: str, system_prompt: Optional[str] = None, tools: list[Tool] = [], timeout: int = 120, verbose: Literal["none", "debug", "auto"] = "auto", max_turns: int = 20,
+    def __init__(self, model: str, base_url: str, api_key: str, system_prompt: Optional[str] = None, tools: list[Tool] = [], internal_tools: list = [], timeout: int = 120, verbose: Literal["none", "debug", "auto"] = "auto", max_turns: int = 20,
                  pre_user_query_hooks: list[callable] = [],
                  post_user_query_hooks: list[callable] = [],
                  pre_tool_use_hooks: list[callable] = [],
                  post_tool_use_hooks: list[callable] = [],
                  pre_response_hooks: list[callable] = [],
-                 post_response_hooks: list[callable] = []):
+                 post_response_hooks: list[callable] = [],
+                 pre_llm_call_hooks: list[callable] = [],
+                 post_llm_call_hooks: list[callable] = []):
         self.model = model
         self.base_url = base_url
         self.api_key = api_key
         self.system_prompt = system_prompt
         self.tools = tools
-        self.tool_schema = [tool.openai_schema for tool in self.tools]
+        self.internal_tools = internal_tools
+        self.tool_schema = [tool.openai_schema for tool in self.tools] + \
+            [it.openai_schema for it in self.internal_tools]
         self.tool_dict = {tool.name: tool for tool in self.tools}
+        self.internal_tool_dict = {
+            tool.name: tool for tool in self.internal_tools}
         self.timeout = timeout
         self.verbose = verbose
         self.max_turns = max_turns
@@ -61,11 +80,15 @@ class Agent:
         self.post_tool_use_hooks = post_tool_use_hooks
         self.pre_response_hooks = pre_response_hooks
         self.post_response_hooks = post_response_hooks
+        self.pre_llm_call_hooks = pre_llm_call_hooks
+        self.post_llm_call_hooks = post_llm_call_hooks
+
         self.state = AgentState()
 
-    def clear_messages(self):
-        """清空消息历史"""
+    def clear_state(self):
         self.state.messages = []
+        self.state.extra_states = {}
+        self.state.todo_list = []
 
     def get_messages(self) -> list[dict]:
         """获取当前消息列表"""
@@ -77,9 +100,17 @@ class Agent:
         max_turns = self.max_turns
 
         if not self.state.messages and self.system_prompt:
-            self.state.messages.append({"role": "system", "content": self.system_prompt})
+            self.state.messages.append(
+                {"role": "system", "content": self.system_prompt})
 
         user_message = query
+
+        # 1. 执行 pre_user_query_hooks
+        for hook in self.pre_user_query_hooks:
+            continue_execution, message = hook(self.state)
+            yield message
+            if not continue_execution:
+                return
 
         if self.state.current_mode == "plan":
             user_message = f"根据用户的问题，生成一个计划，包含计划的详细说明，以及要完成用户问题的步骤。在进行计划的时候不要调用编辑性质的工具，只调用查询、读取性质的工具。用户问题是：{query}"
@@ -88,6 +119,14 @@ class Agent:
 
         for i in range(max_turns):
             if i < max_turns - 1:
+                for hook in self.pre_llm_call_hooks:
+                    continue_execution, message = hook(self.state)
+                    if message is not None:
+                        yield message
+
+                    if not continue_execution:
+                        return
+                        
                 response = completion(
                     model=self.model,
                     base_url=self.base_url,
@@ -119,8 +158,8 @@ class Agent:
 
             if message.tool_calls is None or len(message.tool_calls) == 0:
                 self.state.messages.append({"role": message.role,
-                                "content": message.content,
-                                 "reasoning_content": message.reasoning_content})
+                                            "content": message.content,
+                                            "reasoning_content": message.reasoning_content})
                 if self.state.current_mode == "plan":
                     yield "你可以使用/auto_edit或/default来切换模式，执行计划"
                 yield response.usage
@@ -133,35 +172,40 @@ class Agent:
                 "tool_calls": message.tool_calls,
                 "reasoning_content": message.reasoning_content
             })
-            tool_call_flag = True
+            
             for tool_call in message.tool_calls:
                 tool_name = tool_call.function.name
                 tool_args = json.loads(tool_call.function.arguments)
-                tool = self.tool_dict[tool_name]
-                if tool is None and verbose in ["debug", "auto"]:
+
+                # 判断 tool 类型
+                tool = self.tool_dict.get(tool_name)
+                internal_tool = self.internal_tool_dict.get(tool_name)
+
+                if tool is None and internal_tool is None and verbose in ["debug", "auto"]:
                     yield f"警告：工具 {tool_name} 不存在"
                     continue
-                
-                       
+
                 # 设置当前工具上下文到 extra_states
-                self.state.extra_states["current_tool"] = tool
+                current_tool = tool if tool else internal_tool
+                self.state.extra_states["current_tool"] = current_tool
                 self.state.extra_states["current_tool_args"] = tool_args
 
                 for pre_tool_use_hook in self.pre_tool_use_hooks:
                     tool_call_flag, msg = pre_tool_use_hook(self.state)
-                    yield msg
+                    if msg is not None:
+                        yield msg
                     if not tool_call_flag:
-                        break
-
-                if not tool_call_flag:
-                    self.state.messages.append({"role": "tool",
-                                "content": f"工具 {tool_name} 执行被拒绝",
-                                 "tool_call_id": tool_call.id,
-                                 "name": tool_name})
-                    break
+                        self.state.messages.append({"role": "tool",
+                                                "content": f"工具 {tool_name} 执行失败，{msg}",
+                                                "tool_call_id": tool_call.id,
+                                                "name": tool_name})
+                        return
 
                 try:
-                    result = tool(**tool_args)
+                    if tool:
+                        result = tool(**tool_args)
+                    elif internal_tool:
+                        result = internal_tool(state=self.state, **tool_args)
                 except Exception as e:
                     if verbose in ["debug", "auto"]:
                         yield f"工具 {tool_name} 执行异常：{e}"
@@ -184,12 +228,10 @@ class Agent:
 
                 # add tool result message
                 self.state.messages.append({"role": "tool",
-                                "content": str(result),
-                                 "tool_call_id": tool_call.id,
-                                 "name": tool_name})
+                                            "content": str(result),
+                                            "tool_call_id": tool_call.id,
+                                            "name": tool_name})
 
-            if not tool_call_flag:
-                break
 
 class CLI:
     def __init__(self, model: str, base_url: str, api_key: str,
@@ -204,10 +246,12 @@ class CLI:
             api_key=api_key,
             system_prompt=system_prompt,
             tools=tools,
+            internal_tools=[create_todo, edit_todo, clear_todo, get_todo],
             timeout=timeout,
             verbose=verbose,
             max_turns=max_turns,
-            pre_tool_use_hooks = [self.interactive_authorization]
+            pre_tool_use_hooks=[self.interactive_authorization],
+            pre_llm_call_hooks=[add_todo_message],
         )
         self.session = PromptSession()
 
@@ -251,7 +295,7 @@ class CLI:
                 case "exit":
                     break
                 case "/clear":
-                    self.agent.clear_messages()
+                    self.agent.clear_state()
                     continue
 
                 case "/plan":
@@ -273,6 +317,7 @@ class CLI:
                 continue
             except Exception as e:
                 self.console.print(f"发生错误：{e}")
+                traceback.print_exc()
                 continue
 
 
@@ -281,7 +326,7 @@ if __name__ == "__main__":
         model=f"openai/{os.getenv('OPENAI_MODEL_NAME')}",
         base_url=os.getenv("OPENAI_BASE_URL"),
         api_key=os.getenv("OPENAI_API_KEY"),
-        system_prompt=build_system_prompt("你是一个智能助手"),
+        system_prompt=build_system_prompt("你是一个智能助手.如果遇到复杂的问题，请你调用todo相关的工具，创建并维护todo list以帮助你完成任务"),
         tools=[tavily_search, tavily_extract, read_file,
                write_file, edit_file, list_dir, exec],
     )
