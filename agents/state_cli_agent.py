@@ -498,7 +498,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     cli = CLI(
-        model=f"openai/{os.getenv('OPENAI_MODEL_NAME')}",
+        model=f"moonshot/{os.getenv('OPENAI_MODEL_NAME')}",
         base_url=os.getenv("OPENAI_BASE_URL"),
         api_key=os.getenv("OPENAI_API_KEY"),
         system_prompt=build_system_prompt(
