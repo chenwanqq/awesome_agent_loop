@@ -30,7 +30,12 @@ def build_system_prompt(system_prompt: str = None, use_agents_md: bool = True, u
 
 class Agent:
     def __init__(self, model: str, base_url: str, api_key: str, system_prompt: Optional[str] = None, tools: list[Tool] = [], timeout: int = 120, verbose: Literal["none", "debug", "auto"] = "auto", max_turns: int = 20,
-                 authorization_hook: Optional[callable] = None):
+                 pre_user_query_hooks: list[callable] = [],
+                 post_user_query_hooks: list[callable] = [],
+                 pre_tool_use_hooks: list[callable] = [],
+                 post_tool_use_hooks: list[callable] = [],
+                 pre_response_hooks: list[callable] = [],
+                 post_response_hooks: list[callable] = []):
         self.model = model
         self.base_url = base_url
         self.api_key = api_key
@@ -41,8 +46,13 @@ class Agent:
         self.timeout = timeout
         self.verbose = verbose
         self.max_turns = max_turns
-        self.authorization_hook = authorization_hook
         self.current_mode: Literal["plan", "default", "auto_edit"] = "default"
+        self.pre_user_query_hooks = pre_user_query_hooks
+        self.post_user_query_hooks = post_user_query_hooks
+        self.pre_tool_use_hooks = pre_tool_use_hooks
+        self.post_tool_use_hooks = post_tool_use_hooks
+        self.pre_response_hooks = pre_response_hooks
+        self.post_response_hooks = post_response_hooks
 
     # 暂时只返回str
     def run(self, query: str, messages: Optional[list[dict]] = None):
@@ -108,7 +118,6 @@ class Agent:
                 "tool_calls": message.tool_calls,
                 "reasoning_content": message.reasoning_content
             })
-
             tool_call_flag = True
             for tool_call in message.tool_calls:
                 tool_name = tool_call.function.name
@@ -117,16 +126,21 @@ class Agent:
                 if tool is None and verbose in ["debug", "auto"]:
                     yield f"警告：工具 {tool_name} 不存在"
                     continue
+                
+                       
+                for pre_tool_use_hook in self.pre_tool_use_hooks:
+                    tool_call_flag,msg = pre_tool_use_hook(tool, tool_args,self.current_mode)
+                    yield msg
+                    if not tool_call_flag:
+                        break
 
-                if self.authorization_hook is not None and self.current_mode != "auto_edit" and not self.authorization_hook(tool, tool_args):
-                    yield f"工具 {tool_name} 执行被拒绝"
+                if not tool_call_flag:
                     messages.append({"role": "tool",
                                 "content": f"工具 {tool_name} 执行被拒绝",
                                  "tool_call_id": tool_call.id,
                                  "name": tool_name})
-                    tool_call_flag = False
                     break
-                
+
                 try:
                     result = tool(**tool_args)
                 except Exception as e:
@@ -158,12 +172,14 @@ class Agent:
             if not tool_call_flag:
                 break
 
-
 class CLI:
     def __init__(self, model: str, base_url: str, api_key: str,
                  system_prompt: str, tools: list[Tool] = [],
                  timeout: int = 120, verbose: Literal["none", "debug", "auto"] = "auto",
                  max_turns: int = 20):
+
+        self.console = Console()
+        self.override_authorization: dict[str, Permission] = dict()
         self.agent = Agent(
             model=model,
             base_url=base_url,
@@ -173,29 +189,30 @@ class CLI:
             timeout=timeout,
             verbose=verbose,
             max_turns=max_turns,
+            pre_tool_use_hooks = [self.interactive_authorization]
         )
-        self.console = Console()
-        self.override_authorization: dict[str, Permission] = dict()
-        self.agent.authorization_hook = self.interactive_authorization
         self.session = PromptSession()
 
-    def interactive_authorization(self, tool: Tool, tool_args: dict) -> bool:
+    def interactive_authorization(self, tool: Tool, tool_args: dict,mode: Literal["plan", "default", "auto_edit"]) -> tuple[bool,str]:
+        if mode == "auto_edit":
+            return True,None
+        
         if tool.name in self.override_authorization and self.override_authorization[tool.name] == Permission.ALLOW:
-            return True
+            return True,None
 
         if tool.default_permission == Permission.ALLOW:
-            return True
+            return True,None
 
         if tool.name not in self.override_authorization:
             choice = Prompt.ask(f"是否授权执行工具 {tool.name}，参数 {tool_args}？", choices=[
                                 "yes", "no", "always"])
             if choice == "yes":
-                return True
+                return True,None
             elif choice == "always":
                 self.override_authorization[tool.name] = Permission.ALLOW
-                return True
+                return True,None
             else:
-                return False
+                return False,f"工具 {tool.name} 执行被拒绝"
 
     def run(self):
         self.console.print("欢迎使用智能助手")

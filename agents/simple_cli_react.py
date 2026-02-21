@@ -6,6 +6,7 @@ from typing import Literal,Optional
 import json
 from rich.console import Console
 from datetime import datetime
+from prompt_toolkit import PromptSession
 
 dotenv.load_dotenv()
 '''
@@ -143,12 +144,13 @@ class CLI:
     def __init__(self, agent: Agent):
         self.agent = agent
         self.console = Console()
+        self.session = PromptSession()
     
     def run(self):
         self.console.print("欢迎使用智能助手")
         messages = []
         while True:
-            query = input("> ")
+            query = self.session.prompt("> ")
 
             match query:
                 case "exit":

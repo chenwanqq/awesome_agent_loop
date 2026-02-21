@@ -46,7 +46,7 @@
     - [x] CLI与多轮对话
     - [x] 处理中断
     - [x] 权限（中间件）
-    - [ ] plan模式
+    - [x] plan模式
     - [ ] todo list
     - [ ] 上下文压缩与滑动窗口
     - [ ] session与continue

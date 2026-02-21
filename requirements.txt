@@ -10,3 +10,6 @@ tavily-python
 # CLI 美化输出
 rich
 
+# 终端输入处理（支持中文退格）
+prompt_toolkit
+
