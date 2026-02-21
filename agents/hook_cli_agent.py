@@ -9,6 +9,8 @@ from rich.console import Console
 from rich.prompt import Prompt
 from datetime import datetime
 from prompt_toolkit import PromptSession
+from pydantic import BaseModel
+
 
 dotenv.load_dotenv()
 
@@ -26,6 +28,13 @@ def build_system_prompt(system_prompt: str = None, use_agents_md: bool = True, u
         system_prompt += f"当前日期是{datetime.now().strftime('%Y-%m-%d')}"
 
     return system_prompt
+
+# Same thought as LangGraph
+class AgentState(BaseModel):
+    messages: list[dict] = []
+    current_mode: Literal["plan", "default", "auto_edit"] = "default"
+    override_authorization: dict[str, Permission] = {}
+    extra_states: dict = {}
 
 
 class Agent:
@@ -46,37 +55,36 @@ class Agent:
         self.timeout = timeout
         self.verbose = verbose
         self.max_turns = max_turns
-        self.current_mode: Literal["plan", "default", "auto_edit"] = "default"
         self.pre_user_query_hooks = pre_user_query_hooks
         self.post_user_query_hooks = post_user_query_hooks
         self.pre_tool_use_hooks = pre_tool_use_hooks
         self.post_tool_use_hooks = post_tool_use_hooks
         self.pre_response_hooks = pre_response_hooks
         self.post_response_hooks = post_response_hooks
-        self.messages: list[dict] = []
+        self.state = AgentState()
 
     def clear_messages(self):
         """清空消息历史"""
-        self.messages = []
+        self.state.messages = []
 
     def get_messages(self) -> list[dict]:
         """获取当前消息列表"""
-        return self.messages.copy()
+        return self.state.messages.copy()
 
     # 暂时只返回str
     def run(self, query: str):
         verbose = self.verbose
         max_turns = self.max_turns
 
-        if not self.messages and self.system_prompt:
-            self.messages.append({"role": "system", "content": self.system_prompt})
+        if not self.state.messages and self.system_prompt:
+            self.state.messages.append({"role": "system", "content": self.system_prompt})
 
         user_message = query
 
-        if self.current_mode == "plan":
+        if self.state.current_mode == "plan":
             user_message = f"根据用户的问题，生成一个计划，包含计划的详细说明，以及要完成用户问题的步骤。在进行计划的时候不要调用编辑性质的工具，只调用查询、读取性质的工具。用户问题是：{query}"
 
-        self.messages.append({"role": "user", "content": user_message})
+        self.state.messages.append({"role": "user", "content": user_message})
 
         for i in range(max_turns):
             if i < max_turns - 1:
@@ -84,19 +92,19 @@ class Agent:
                     model=self.model,
                     base_url=self.base_url,
                     api_key=self.api_key,
-                    messages=self.messages,
+                    messages=self.state.messages,
                     tools=self.tool_schema,
                     tool_choice="auto",
                     timeout=self.timeout
                 )
             else:
-                self.messages.append(
+                self.state.messages.append(
                     {"role": "user", "content": "本轮对话还剩最后一次LLM调用机会，你不能再调用tool了，必须根据现有的结果生成最终的回答"})
                 response = completion(
                     model=self.model,
                     base_url=self.base_url,
                     api_key=self.api_key,
-                    messages=self.messages,
+                    messages=self.state.messages,
                     tools=self.tool_schema,
                     tool_choice="none"
                 )
@@ -110,16 +118,16 @@ class Agent:
                 yield response
 
             if message.tool_calls is None or len(message.tool_calls) == 0:
-                self.messages.append({"role": message.role,
+                self.state.messages.append({"role": message.role,
                                 "content": message.content,
                                  "reasoning_content": message.reasoning_content})
-                if self.current_mode == "plan":
+                if self.state.current_mode == "plan":
                     yield "你可以使用/auto_edit或/default来切换模式，执行计划"
                 yield response.usage
                 return
 
             # add tool calling message
-            self.messages.append({
+            self.state.messages.append({
                 "role": message.role,
                 "content": message.content,
                 "tool_calls": message.tool_calls,
@@ -135,14 +143,18 @@ class Agent:
                     continue
                 
                        
+                # 设置当前工具上下文到 extra_states
+                self.state.extra_states["current_tool"] = tool
+                self.state.extra_states["current_tool_args"] = tool_args
+
                 for pre_tool_use_hook in self.pre_tool_use_hooks:
-                    tool_call_flag,msg = pre_tool_use_hook(tool, tool_args,self.current_mode)
+                    tool_call_flag, msg = pre_tool_use_hook(self.state)
                     yield msg
                     if not tool_call_flag:
                         break
 
                 if not tool_call_flag:
-                    self.messages.append({"role": "tool",
+                    self.state.messages.append({"role": "tool",
                                 "content": f"工具 {tool_name} 执行被拒绝",
                                  "tool_call_id": tool_call.id,
                                  "name": tool_name})
@@ -171,7 +183,7 @@ class Agent:
                         yield f"工具 {tool_name} 执行结果：{result_str[:100]}..."
 
                 # add tool result message
-                self.messages.append({"role": "tool",
+                self.state.messages.append({"role": "tool",
                                 "content": str(result),
                                  "tool_call_id": tool_call.id,
                                  "name": tool_name})
@@ -186,7 +198,6 @@ class CLI:
                  max_turns: int = 20):
 
         self.console = Console()
-        self.override_authorization: dict[str, Permission] = dict()
         self.agent = Agent(
             model=model,
             base_url=base_url,
@@ -200,33 +211,36 @@ class CLI:
         )
         self.session = PromptSession()
 
-    def interactive_authorization(self, tool: Tool, tool_args: dict,mode: Literal["plan", "default", "auto_edit"]) -> tuple[bool,str]:
-        if mode == "auto_edit":
-            return True,None
-        
-        if tool.name in self.override_authorization and self.override_authorization[tool.name] == Permission.ALLOW:
-            return True,None
+    def interactive_authorization(self, state: AgentState) -> tuple[bool, str]:
+        tool = state.extra_states["current_tool"]
+        tool_args = state.extra_states["current_tool_args"]
+
+        if state.current_mode == "auto_edit":
+            return True, None
+
+        if tool.name in state.override_authorization and state.override_authorization[tool.name] == Permission.ALLOW:
+            return True, None
 
         if tool.default_permission == Permission.ALLOW:
-            return True,None
+            return True, None
 
-        if tool.name not in self.override_authorization:
+        if tool.name not in state.override_authorization:
             choice = Prompt.ask(f"是否授权执行工具 {tool.name}，参数 {tool_args}？", choices=[
                                 "yes", "no", "always"])
             if choice == "yes":
-                return True,None
+                return True, None
             elif choice == "always":
-                self.override_authorization[tool.name] = Permission.ALLOW
-                return True,None
+                state.override_authorization[tool.name] = Permission.ALLOW
+                return True, None
             else:
-                return False,f"工具 {tool.name} 执行被拒绝"
+                return False, f"工具 {tool.name} 执行被拒绝"
 
     def run(self):
         self.console.print("欢迎使用智能助手")
         while True:
-            if self.agent.current_mode == "plan":
+            if self.agent.state.current_mode == "plan":
                 prompt_text = "plan> "
-            elif self.agent.current_mode == "auto_edit":
+            elif self.agent.state.current_mode == "auto_edit":
                 prompt_text = "auto_edit> "
             else:
                 prompt_text = "> "
@@ -241,15 +255,15 @@ class CLI:
                     continue
 
                 case "/plan":
-                    self.agent.current_mode = "plan"
+                    self.agent.state.current_mode = "plan"
                     continue
 
                 case "/auto_edit":
-                    self.agent.current_mode = "auto_edit"
+                    self.agent.state.current_mode = "auto_edit"
                     continue
 
                 case "/default":
-                    self.agent.current_mode = "default"
+                    self.agent.state.current_mode = "default"
                     continue
 
             try:
