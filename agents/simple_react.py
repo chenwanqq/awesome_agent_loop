@@ -41,7 +41,7 @@ class Agent:
                     messages=messages,
                     tools=self.tool_schema,
                     tool_choice="auto"
-                )
+                )   
             else:
                 messages.append(
                     {"role": "user", "content": "本轮对话还剩最后一次LLM调用机会，你不能再调用tool了，必须根据现有的结果生成最终的回答"})
@@ -103,7 +103,7 @@ class Agent:
 
 if __name__ == "__main__":
     agent = Agent(
-        model=f"openai/{os.getenv('OPENAI_MODEL_NAME')}",
+        model=f"moonshot/{os.getenv('OPENAI_MODEL_NAME')}",
         base_url=os.getenv("OPENAI_BASE_URL"),
         api_key=os.getenv("OPENAI_API_KEY"),
         system_prompt="你是一个智能助手",

@@ -41,7 +41,7 @@
     - [x] tool call
     - [x] 单轮对话的Agent Loop (**agents/simple_react.py**)
 
-- [ ] 2. 一个CLI多轮对话Agent工具
+- [x] 2. 一个CLI多轮对话Agent工具
     
     - [x] CLI与多轮对话
     - [x] 处理中断 (**agents/simple_cli_react.py**)
@@ -49,7 +49,12 @@
     - [x] plan模式 (**agents/rich_cli_agent.py**)
     - [x] todo list
     - [x] 持久化: session与continue
-    - [ ] 上下文压缩与滑动窗口
+    - [x] 上下文压缩与滑动窗口
+
+- [ ] 2. multiAgent
+
+    - [ ] 串行subAgent(sub agent as a tool)
+    - [ ] Agent Teams（后台并行执行，相互通信）
 
 - [ ] 3. 一个claw式的主动、持久的Agent
 
@@ -57,10 +62,7 @@
     - [ ] 定时任务
     - [ ] skill，以及自进化（自行安装寻找skill）
 
-- [ ] 4. multiAgent
 
-    - [ ] 串行subAgent(sub agent as a tool)
-    - [ ] Agent Teams（后台并行执行，相互通信）
 
 ## 实现细节
 
