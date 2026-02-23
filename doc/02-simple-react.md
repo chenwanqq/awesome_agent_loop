@@ -195,7 +195,7 @@ class Agent:
                                  "name": tool_name})
 ```
 
-完整代码可参见agents/simple_react.py
+完整代码可参见 `agents/simple_react.py`
 
 看没看见？一个单轮的ReAct的Agent Loop，实际上就是单轮循环（如果算上多个tool call的调用就是两层）。但是，这个单轮的循环，已经足够帮你去网上搜索内容、整理文档了。
 

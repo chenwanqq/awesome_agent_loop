@@ -217,7 +217,7 @@ class CLI:
             query = self.session.prompt(prompt_text)
 
             match query:
-                case "exit":
+                case "/exit":
                     break
                 case "/clear":
                     self.agent.clear_messages()

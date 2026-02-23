@@ -4,6 +4,18 @@
 
 本项目没有任何新东西，目标也不是建立一个production-ready的工具，纯粹是帮助个人启发式地进行学习。
 
+## 文档
+
+本项目的详细教程文档：
+
+| 文档 | 内容 | 对应代码 |
+|------|------|----------|
+| [前言](./doc/01-preview.md) | 项目背景与初衷 | - |
+| [简单ReAct Agent](./doc/02-simple-react.md) | 实现基础ReAct循环、tool调用、上下文工程 | `agents/simple_react.py` |
+| [多轮对话与plan模式](./doc/03-multi-turns-plan.md) | CLI多轮对话、权限控制、plan模式实现 | `agents/simple_cli_react.py`, `agents/rich_cli_agent.py` |
+| [todo list与持久化](./doc/04-todo-persistence-hook.md) | todo list功能、状态持久化、hook设计模式 | `agents/state_cli_agent.py` |
+| [中间件架构与上下文压缩](./doc/05-middleware-compaction.md) | 中间件架构、上下文压缩与滑动窗口 | `agents/middleware_cli_agent.py`, `middlewares/compact.py` |
+
 ## 基础
 
 我们将使用litellm来处理llm调用，同时用vibe的方式去实现tools，把学习的重点放在agent loop上
@@ -39,21 +51,22 @@
 - [x] 1. 一个简单ReAct循环
 
     - [x] tool call
-    - [x] 单轮对话的Agent Loop (**agents/simple_react.py**)
+    - [x] 单轮对话的Agent Loop (`agents/simple_react.py`)
 
 - [x] 2. 一个CLI多轮对话Agent工具
-    
+
     - [x] CLI与多轮对话
-    - [x] 处理中断 (**agents/simple_cli_react.py**)
+    - [x] 处理中断 (`agents/simple_cli_react.py`)
     - [x] 权限（中间件）
-    - [x] plan模式 (**agents/rich_cli_agent.py**)
+    - [x] plan模式 (`agents/rich_cli_agent.py`)
     - [x] todo list
-    - [x] 持久化: session与continue
-    - [x] 上下文压缩与滑动窗口
+    - [x] 持久化: session与continue(`agents/state_cli_agent.py`)
+    - [x] 上下文压缩与滑动窗口(`agents/middleware_cli_agent.py`)
 
 - [ ] 2. multiAgent
 
     - [ ] 串行subAgent(sub agent as a tool)
+    - [ ] Task(替代todo)
     - [ ] Agent Teams（后台并行执行，相互通信）
 
 - [ ] 3. 一个claw式的主动、持久的Agent
@@ -61,12 +74,6 @@
     - [ ] 分层记忆
     - [ ] 定时任务
     - [ ] skill，以及自进化（自行安装寻找skill）
-
-
-
-## 实现细节
-
-详细的代码实现说明请参见 [IMPLEMENTATION.md](./IMPLEMENTATION.md)。
 
 ## 参考资料
 
