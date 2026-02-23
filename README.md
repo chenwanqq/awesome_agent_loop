@@ -1,5 +1,7 @@
 # awesome_agent_loop
 
+[English](./readme_en.md)
+
 这个项目旨在逐步由易到难，通过逐步实践学习LLM agent的核心-Agent Loop的各种形态。
 
 本项目没有任何新东西，目标也不是建立一个production-ready的工具，纯粹是帮助个人启发式地进行学习。
