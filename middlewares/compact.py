@@ -306,7 +306,7 @@ class CompactMiddleware(Middleware):
 
         return True, None
 
-    def _cmd_compact(self, state: AgentState) -> tuple[bool, str]:
+    def _cmd_compact(self, _ ,state: AgentState) -> tuple[bool, str]:
         """/compact 命令 - 手动触发上下文压缩"""
         success, info = self._compact_context(state)
         if success:
