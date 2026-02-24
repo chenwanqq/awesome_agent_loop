@@ -5,6 +5,7 @@ from .tavily import TavilyMiddleware
 from .persist import PersistMiddleware
 from .todo import TodoMiddleware
 from .compact import CompactMiddleware
+from .subagent import SubAgentMiddleware
 
 __all__ = [
     "Middleware",
@@ -14,4 +15,5 @@ __all__ = [
     "PersistMiddleware",
     "TodoMiddleware",
     "CompactMiddleware",
+    "SubAgentMiddleware"
 ]

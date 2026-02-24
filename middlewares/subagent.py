@@ -3,7 +3,7 @@ from typing import override, Any, Optional
 from multiagents import Agent
 from multiagents.state import AgentState
 from pathlib import Path
-from tools import Tool
+from tools import Tool, Permission
 from rich.console import Console
 
 from .authorization import InteractiveAuthorizationMiddleware
@@ -43,15 +43,35 @@ class SubAgentMiddleware(Middleware):
                 # 为每个 subagent 创建一个 Tool
                 tool_func = self._create_subagent_tool(
                     agent, name, description)
-                tool = Tool(tool_func)
+                tool = Tool(tool_func, default_permission=Permission.ALLOW)
                 self._tools.append(tool)
 
                 # 为每个 subagent 创建一个 Slash Cmd
                 cmd_func = self._create_subagent_cmd(agent, name, description)
                 self._slash_cmds[name] = cmd_func
 
+        # 添加 /agents 命令用于查看所有 agents
+        self._slash_cmds["agents"] = self._create_list_agents_cmd()
+
+    def _create_list_agents_cmd(self):
+        """创建列出所有 agents 的 slash cmd 处理函数"""
+        def list_agents_cmd(_: str = "", state: AgentState = None) -> tuple[bool, str]:
+            """列出所有可用的 subagents"""
+            if not self.sub_agents:
+                return True, "暂无可用的子代理"
+
+            lines = ["[bold cyan]可用子代理列表：[/bold cyan]", ""]
+            for name, description, _ in self.sub_agents:
+                lines.append(f"  [green]/{name}[/green] - {description}")
+
+            return True, "\n".join(lines)
+
+        list_agents_cmd.__name__ = "agents"
+        list_agents_cmd.__doc__ = "查看所有可用的子代理列表"
+
+        return list_agents_cmd
+
     def _create_subagent_tool(self, agent: Agent, agent_name: str, agent_description: str):
-        """创建一个调用 subagent 的工具函数"""
         def subagent_tool(query: str) -> str:
             agent_run = agent.run(query)
             try:
@@ -98,7 +118,6 @@ class SubAgentMiddleware(Middleware):
 
     @override
     def slash_cmds(self) -> dict[str, callable]:
-        """返回中间件提供的斜杠命令字典"""
         return self._slash_cmds
 
     @override

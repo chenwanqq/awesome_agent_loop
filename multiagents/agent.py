@@ -10,9 +10,9 @@ from .state import AgentState
 
 
 class Agent:
-    def __init__(self, model: str, base_url: str, api_key: str, system_prompt: Optional[str] = None, tools: list[Tool] = [],
+    def __init__(self, model: str, base_url: str, api_key: str, system_prompt: Optional[str] = None, tools: list[Tool] = None,
                  timeout: int = 120, verbose: Literal["none", "debug", "auto"] = "auto", max_turns: int = 20,
-                 middlewares: list[Middleware] = [], initial_mode="default"):
+                 middlewares: list[Middleware] = None, initial_mode="default"):
         self.model = model
         self.base_url = base_url
         self.api_key = api_key
@@ -27,8 +27,9 @@ class Agent:
         self.post_response_hooks = []
         self.pre_llm_call_hooks = []
         self.post_llm_call_hooks = []
-        self.tools = tools
+        self.tools = tools if tools is not None else []
         self.internal_tools = []
+        middlewares = middlewares if middlewares is not None else []
 
         # 构建系统提示
         self.system_prompt = self._build_system_prompt(
@@ -47,6 +48,19 @@ class Agent:
             self.post_llm_call_hooks.extend(middleware.post_llm_call_hooks())
             self.tools.extend(middleware.tools())
             self.internal_tools.extend(middleware.internal_tools())
+
+        # 去重：基于工具名称，保留第一个出现的工具（防御性编程）
+        seen_tools = {}
+        for tool in self.tools:
+            if tool.name not in seen_tools:
+                seen_tools[tool.name] = tool
+        self.tools = list(seen_tools.values())
+
+        seen_internal_tools = {}
+        for tool in self.internal_tools:
+            if tool.name not in seen_internal_tools:
+                seen_internal_tools[tool.name] = tool
+        self.internal_tools = list(seen_internal_tools.values())
 
         self.tool_schema = [tool.openai_schema for tool in self.tools] + \
             [it.openai_schema for it in self.internal_tools]
@@ -252,7 +266,7 @@ class Agent:
                         yield hook_msg
                     if not continue_execution:
                         return
-                return
+                return message.content
 
             # add tool calling message
             self.state.messages.append({
