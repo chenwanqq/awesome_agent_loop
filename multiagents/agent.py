@@ -167,15 +167,38 @@ class Agent:
     def get_messages(self) -> list[dict]:
         """获取当前消息列表"""
         return self.state.messages.copy()
+    
+    def clean_tool_calls(self):
+        message_index_to_be_deleted = []
+        for i in range(len(self.state.messages)):
+            if self.state.messages[i].get("tool_calls",None) is not None:
+                deleted_index = [i]
+                tool_call_ids = [tool_call["id"] for tool_call in self.state.messages[i]["tool_calls"]]
+                for j in range(i+1,len(self.state.messages)):
+                    if self.state.messages[j]["role"] == "tool" and self.state.messages[j]["tool_call_id"] in tool_call_ids:
+                        deleted_index.append(j)
+                        tool_call_ids.remove(self.state.messages[j]["tool_call_id"])
+                    else:
+                        break
+
+                if len(tool_call_ids) > 0:
+                    message_index_to_be_deleted.extend(deleted_index)
+            
+        for i in message_index_to_be_deleted:
+            del self.state.messages[i]
 
     # 暂时只返回str
     def run(self, query: str):
         verbose = self.verbose
         max_turns = self.max_turns
 
+        if self.state.messages is not None and len(self.state.messages) > 0:
+            self.clean_tool_calls()
+
         if not self.state.messages and self.system_prompt:
             self.state.messages.append(
                 {"role": "system", "content": self.system_prompt})
+    
 
         user_message = query
 
@@ -239,7 +262,6 @@ class Agent:
 
             message = response.choices[0].message
             self.state.total_tokens = response.usage.total_tokens
-            yield response.usage
 
             if verbose == "auto":
                 yield "<think>" + message.reasoning_content + "</think>"
