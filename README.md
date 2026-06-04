@@ -67,7 +67,7 @@
 
 - [ ] 2. multiAgent
 
-    - [ ] 串行subAgent(sub agent as a tool)
+    - [x] 串行subAgent(sub agent as a tool)
     - [ ] Task(替代todo)
     - [ ] Agent Teams（后台并行执行，相互通信）
 
